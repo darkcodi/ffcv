@@ -8,6 +8,10 @@ pub struct Args {
     /// Firefox profile name (default: "default")
     #[arg(short, long, default_value = "default")]
     pub profile: String,
+
+    /// List all available Firefox profiles
+    #[arg(long, conflicts_with = "profile")]
+    pub list: bool,
 }
 
 impl Args {

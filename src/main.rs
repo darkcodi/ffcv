@@ -4,22 +4,62 @@ mod profile;
 mod types;
 
 use cli::Args;
-use profile::{find_profile_path, get_prefs_path};
+use profile::{find_profile_path, get_prefs_path, list_profiles};
 use types::Config;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse command-line arguments
     let args = Args::parse();
 
-    // Find the profile directory
-    let profile_path = find_profile_path(&args.profile)
-        .map_err(|e| {
+    // Handle --list flag
+    if args.list {
+        let profiles = list_profiles().map_err(|e| {
             anyhow::anyhow!(
-                "Failed to find profile '{}': {}. Make sure Firefox is installed and the profile exists.",
-                args.profile,
+                "Failed to list profiles: {}. Make sure Firefox is installed.",
                 e
             )
         })?;
+
+        if profiles.is_empty() {
+            println!("No Firefox profiles found.");
+            return Ok(());
+        }
+
+        println!("Available Firefox Profiles:");
+        println!("==========================");
+        for profile in &profiles {
+            println!("Name: {}", profile.name);
+            println!("  Path: {}", profile.path.display());
+            println!(
+                "  Default: {}",
+                if profile.is_default { "Yes" } else { "No" }
+            );
+            println!(
+                "  Relative: {}",
+                if profile.is_relative { "Yes" } else { "No" }
+            );
+
+            if let Some(ref install_hash) = profile.locked_to_install {
+                println!("  Locked to install: {}", install_hash);
+            } else {
+                println!("  Locked to install: No");
+            }
+
+            println!();
+        }
+
+        return Ok(());
+    }
+
+    // Find the profile directory
+    let profile_path = find_profile_path(&args.profile).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to find profile '{}': {}. Make sure Firefox is installed and the profile exists. \
+             Use 'ffcv --list' to see available profiles.",
+            args.profile,
+            e
+        )
+    })?;
 
     // Get the prefs.js file path
     let prefs_path = get_prefs_path(&profile_path);
