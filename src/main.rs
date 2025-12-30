@@ -20,33 +20,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
         })?;
 
-        if profiles.is_empty() {
-            println!("No Firefox profiles found.");
-            return Ok(());
-        }
-
-        println!("Available Firefox Profiles:");
-        println!("==========================");
-        for profile in &profiles {
-            println!("Name: {}", profile.name);
-            println!("  Path: {}", profile.path.display());
-            println!(
-                "  Default: {}",
-                if profile.is_default { "Yes" } else { "No" }
-            );
-            println!(
-                "  Relative: {}",
-                if profile.is_relative { "Yes" } else { "No" }
-            );
-
-            if let Some(ref install_hash) = profile.locked_to_install {
-                println!("  Locked to install: {}", install_hash);
-            } else {
-                println!("  Locked to install: No");
-            }
-
-            println!();
-        }
+        // Output as pretty-printed JSON
+        let json = serde_json::to_string_pretty(&profiles)?;
+        println!("{}", json);
 
         return Ok(());
     }
