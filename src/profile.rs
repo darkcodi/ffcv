@@ -319,21 +319,23 @@ fn get_firefox_install_path() -> Result<PathBuf, anyhow::Error> {
 }
 
 /// Hash the installation path to get the install section name
-/// Firefox uses a simple hash: lowercase hex of the path string's bytes
+/// Firefox uses CityHash64 to hash the installation directory path
 fn hash_install_path(path: &Path) -> String {
-    use std::hash::Hash;
-    use std::hash::Hasher;
+    use cityhasher::hash;
 
-    // Firefox uses a custom hash, but we'll approximate with a simple hasher
-    // The actual algorithm is more complex, but this should work for most cases
-    let path_str = path.to_string_lossy().to_lowercase();
+    // Resolve symlinks first (critical for NixOS and similar systems)
+    let resolved = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
 
-    // Use std::collections::hash_map::DefaultHasher
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    path_str.hash(&mut hasher);
+    // Get parent directory (installation directory)
+    // Firefox hashes the installation directory, not the binary path
+    let install_dir = resolved.parent().unwrap_or(&resolved);
 
-    // Format as hex string (uppercase, as Firefox does)
-    format!("{:016X}", hasher.finish())
+    // Normalize path string
+    let path_str = install_dir.to_string_lossy();
+
+    // Hash with CityHash64 and format as 16 uppercase hex chars
+    let hash: u64 = hash(path_str.as_bytes());
+    format!("{:016X}", hash)
 }
 
 /// Improved fallback: Scan profiles directory with better matching strategies
