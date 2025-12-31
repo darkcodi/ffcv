@@ -1,3 +1,4 @@
+use crate::cli;
 use crate::profile::{find_profile_path, get_prefs_path, list_profiles as list_profiles_impl};
 use crate::query;
 use crate::types::Config;
@@ -21,6 +22,7 @@ pub fn view_config(
     profile_name: &str,
     query_patterns: &[&str],
     get: Option<String>,
+    output_type: cli::OutputType,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let profile_path = find_profile_path(profile_name).map_err(|e| {
         anyhow::anyhow!(
@@ -63,7 +65,20 @@ pub fn view_config(
         preferences
     };
 
-    let json = serde_json::to_string_pretty(&output_config)?;
+    let json = match output_type {
+        cli::OutputType::JsonObject => serde_json::to_string_pretty(&output_config)?,
+        cli::OutputType::JsonArray => {
+            let array_output: Vec<crate::types::ConfigEntry> = output_config
+                .iter()
+                .map(|(key, value)| crate::types::ConfigEntry {
+                    key: key.clone(),
+                    value: value.clone(),
+                })
+                .collect();
+            serde_json::to_string_pretty(&array_output)?
+        }
+    };
+
     println!("{}", json);
     Ok(())
 }

@@ -18,10 +18,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             profile,
             query,
             get,
+            output_type,
         } => {
             // Convert Vec<String> to Vec<&str> for query_preferences
             let query_refs: Vec<&str> = query.iter().map(|s| s.as_str()).collect();
-            commands::view_config(&profile, &query_refs, get)
+            commands::view_config(&profile, &query_refs, get, output_type)
         }
     }
 }

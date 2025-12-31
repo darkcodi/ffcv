@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::str::FromStr;
 
 /// View Firefox configuration from the command line
 #[derive(Parser, Debug)]
@@ -31,5 +32,44 @@ pub enum Commands {
         /// Get a single preference by exact key name (raw output)
         #[arg(long, conflicts_with = "query")]
         get: Option<String>,
+
+        /// Output format type (default: json-object)
+        #[arg(
+            long = "output-type",
+            default_value = "json-object",
+            conflicts_with = "get"
+        )]
+        output_type: OutputType,
     },
+}
+
+/// Output format type for configuration
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputType {
+    JsonObject,
+    JsonArray,
+}
+
+impl FromStr for OutputType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "json-object" => Ok(OutputType::JsonObject),
+            "json-array" => Ok(OutputType::JsonArray),
+            _ => Err(format!(
+                "Invalid output type: '{}'. Valid values: json-object, json-array",
+                s
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for OutputType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputType::JsonObject => write!(f, "json-object"),
+            OutputType::JsonArray => write!(f, "json-array"),
+        }
+    }
 }
