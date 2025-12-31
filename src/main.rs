@@ -1,5 +1,6 @@
 mod cli;
 mod commands;
+mod lexer;
 mod parser;
 mod profile;
 mod types;
