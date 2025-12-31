@@ -1,4 +1,5 @@
 use crate::profile::{find_profile_path, get_prefs_path, list_profiles as list_profiles_impl};
+use crate::query;
 use crate::types::Config;
 
 /// List all available Firefox profiles
@@ -16,7 +17,10 @@ pub fn list_profiles() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// View configuration for a specific profile
-pub fn view_config(profile_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn view_config(
+    profile_name: &str,
+    query_patterns: &[&str],
+) -> Result<(), Box<dyn std::error::Error>> {
     let profile_path = find_profile_path(profile_name).map_err(|e| {
         anyhow::anyhow!(
             "Failed to find profile '{}': {}. Make sure Firefox is installed and the profile exists.\n\
@@ -40,7 +44,15 @@ pub fn view_config(profile_name: &str) -> Result<(), Box<dyn std::error::Error>>
         )
     })?;
 
-    let json = serde_json::to_string_pretty(&preferences)?;
+    // Apply queries if provided
+    let output_config = if !query_patterns.is_empty() {
+        query::query_preferences(&preferences, query_patterns)
+            .map_err(|e| anyhow::anyhow!("Failed to apply query: {}", e))?
+    } else {
+        preferences
+    };
+
+    let json = serde_json::to_string_pretty(&output_config)?;
     println!("{}", json);
     Ok(())
 }

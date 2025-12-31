@@ -3,6 +3,7 @@ mod commands;
 mod lexer;
 mod parser;
 mod profile;
+mod query;
 mod types;
 
 use clap::Parser;
@@ -13,6 +14,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         cli::Commands::Profile => commands::list_profiles(),
-        cli::Commands::Config { profile } => commands::view_config(&profile),
+        cli::Commands::Config { profile, query } => {
+            // Convert Vec<String> to Vec<&str> for query_preferences
+            let query_refs: Vec<&str> = query.iter().map(|s| s.as_str()).collect();
+            commands::view_config(&profile, &query_refs)
+        }
     }
 }

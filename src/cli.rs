@@ -23,5 +23,9 @@ pub enum Commands {
         /// Firefox profile name (default: "default")
         #[arg(short = 'p', long, default_value = "default")]
         profile: String,
+
+        /// Query preferences by glob pattern (e.g., "network.*", "browser.*.enabled")
+        #[arg(long)]
+        query: Vec<String>,
     },
 }
