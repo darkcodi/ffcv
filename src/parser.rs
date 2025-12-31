@@ -584,4 +584,55 @@ mod tests {
             serde_json::Value::String("c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0".to_string())
         );
     }
+
+    #[test]
+    fn test_parse_backspace_escape() {
+        let input = r#"user_pref("test", "value\bwith\bbackspace");"#;
+        let result = parse_prefs_js(input).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result["test"],
+            serde_json::Value::String("value\x08with\x08backspace".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_form_feed_escape() {
+        let input = r#"user_pref("test", "value\fform\ffeed");"#;
+        let result = parse_prefs_js(input).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result["test"],
+            serde_json::Value::String("value\x0cform\x0cfeed".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_null_escape() {
+        let input = r#"user_pref("test", "null\0character");"#;
+        let result = parse_prefs_js(input).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result["test"],
+            serde_json::Value::String("null\x00character".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_all_new_escapes() {
+        let input = r#"user_pref("test", "\b\f\0");"#;
+        let result = parse_prefs_js(input).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result["test"],
+            serde_json::Value::String("\x08\x0c\x00".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_octal_escape_error() {
+        let input = r#"user_pref("test", "\00");"#;
+        let result = parse_prefs_js(input);
+        assert!(result.is_err());
+    }
 }

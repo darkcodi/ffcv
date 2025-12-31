@@ -253,6 +253,31 @@ impl<'a> Lexer<'a> {
                             result.push('\t');
                             self.column += 1;
                         }
+                        Some('b') => {
+                            result.push('\x08'); // Backspace (U+0008)
+                            self.column += 1;
+                        }
+                        Some('f') => {
+                            result.push('\x0c'); // Form feed (U+000C)
+                            self.column += 1;
+                        }
+                        Some('0') => {
+                            // Null character (U+0000)
+                            // Check for octal escapes \00 or \000 (but allow \0 followed by digit)
+                            if let Some(&c) = self.chars.peek() {
+                                if c == '0' {
+                                    // \00 or \000 - octal escape, not supported
+                                    return Err(LexError {
+                                        message: "Octal escape sequences are not supported. Use \\x00 instead.".to_string(),
+                                        line: self.line,
+                                        column: self.column,
+                                    });
+                                }
+                                // \0 followed by 1-9 is fine - just null char followed by that digit
+                            }
+                            result.push('\x00');
+                            self.column += 1;
+                        }
                         Some('x') => {
                             // Hex escape: \xNN
                             self.column += 1;
@@ -614,6 +639,63 @@ mod tests {
             Token::String("line1\nline2\ttab".to_string())
         );
         assert_eq!(lexer.next_token().unwrap(), Token::Eof);
+    }
+
+    #[test]
+    fn test_lexer_string_backspace_escape() {
+        let input = r#""test\bvalue""#;
+        let mut lexer = Lexer::new(input);
+        assert_eq!(
+            lexer.next_token().unwrap(),
+            Token::String("test\x08value".to_string())
+        );
+    }
+
+    #[test]
+    fn test_lexer_string_form_feed_escape() {
+        let input = r#""test\fvalue""#;
+        let mut lexer = Lexer::new(input);
+        assert_eq!(
+            lexer.next_token().unwrap(),
+            Token::String("test\x0cvalue".to_string())
+        );
+    }
+
+    #[test]
+    fn test_lexer_string_null_escape() {
+        let input = r#""test\0value""#;
+        let mut lexer = Lexer::new(input);
+        assert_eq!(
+            lexer.next_token().unwrap(),
+            Token::String("test\x00value".to_string())
+        );
+    }
+
+    #[test]
+    fn test_lexer_string_null_escape_followed_by_digit() {
+        let input = r#""test\01""#;
+        let mut lexer = Lexer::new(input);
+        assert_eq!(
+            lexer.next_token().unwrap(),
+            Token::String("test\x001".to_string())
+        );
+    }
+
+    #[test]
+    fn test_lexer_string_octal_escape_rejected() {
+        let input = r#""test\00""#;
+        let mut lexer = Lexer::new(input);
+        assert!(lexer.next_token().is_err());
+    }
+
+    #[test]
+    fn test_lexer_string_multiple_escapes_together() {
+        let input = r#""\b\f\0""#;
+        let mut lexer = Lexer::new(input);
+        assert_eq!(
+            lexer.next_token().unwrap(),
+            Token::String("\x08\x0c\x00".to_string())
+        );
     }
 
     #[test]
