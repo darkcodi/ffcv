@@ -14,10 +14,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         cli::Commands::Profile => commands::list_profiles(),
-        cli::Commands::Config { profile, query } => {
+        cli::Commands::Config {
+            profile,
+            query,
+            get,
+        } => {
             // Convert Vec<String> to Vec<&str> for query_preferences
             let query_refs: Vec<&str> = query.iter().map(|s| s.as_str()).collect();
-            commands::view_config(&profile, &query_refs)
+            commands::view_config(&profile, &query_refs, get)
         }
     }
 }

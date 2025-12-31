@@ -20,6 +20,7 @@ pub fn list_profiles() -> Result<(), Box<dyn std::error::Error>> {
 pub fn view_config(
     profile_name: &str,
     query_patterns: &[&str],
+    get: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let profile_path = find_profile_path(profile_name).map_err(|e| {
         anyhow::anyhow!(
@@ -44,6 +45,16 @@ pub fn view_config(
         )
     })?;
 
+    // Handle --get mode: single preference retrieval with raw output
+    if let Some(get_key) = get {
+        if let Some(value) = preferences.get(&get_key) {
+            output_raw_value(value)?;
+            return Ok(());
+        }
+        // If preference not found, return error
+        return Err(anyhow::anyhow!("Preference '{}' not found", get_key).into());
+    }
+
     // Apply queries if provided
     let output_config = if !query_patterns.is_empty() {
         query::query_preferences(&preferences, query_patterns)
@@ -54,5 +65,20 @@ pub fn view_config(
 
     let json = serde_json::to_string_pretty(&output_config)?;
     println!("{}", json);
+    Ok(())
+}
+
+/// Output a single preference value in raw format (no JSON wrapping)
+fn output_raw_value(value: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
+    match value {
+        serde_json::Value::String(s) => println!("{}", s),
+        serde_json::Value::Bool(b) => println!("{}", b),
+        serde_json::Value::Number(n) => println!("{}", n),
+        serde_json::Value::Null => println!("null"),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+            // Complex types still output as JSON
+            println!("{}", value);
+        }
+    }
     Ok(())
 }

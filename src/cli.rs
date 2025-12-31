@@ -25,7 +25,11 @@ pub enum Commands {
         profile: String,
 
         /// Query preferences by glob pattern (e.g., "network.*", "browser.*.enabled")
-        #[arg(long)]
+        #[arg(long, conflicts_with = "get")]
         query: Vec<String>,
+
+        /// Get a single preference by exact key name (raw output)
+        #[arg(long, conflicts_with = "query")]
+        get: Option<String>,
     },
 }
