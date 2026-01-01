@@ -164,7 +164,9 @@ pub fn view_config(
             let prefs_with_types = preferences_with_types
                 .as_ref()
                 .expect("Type info should be available for json-array");
-            let array_output: Vec<crate::types::ConfigEntry> = output_config
+
+            // Collect and sort entries for deterministic output
+            let mut sorted_entries: Vec<crate::types::ConfigEntry> = output_config
                 .iter()
                 .map(|(key, value)| {
                     // Look up the type information
@@ -180,7 +182,11 @@ pub fn view_config(
                     }
                 })
                 .collect();
-            serde_json::to_string_pretty(&array_output)?
+
+            // Sort alphabetically by key for deterministic output order
+            sorted_entries.sort_by(|a, b| a.key.cmp(&b.key));
+
+            serde_json::to_string_pretty(&sorted_entries)?
         }
     };
 
@@ -286,7 +292,7 @@ mod tests {
 
     #[test]
     fn test_json_array_output_with_types() {
-        // Test that json-array output includes pref_type for all entries
+        // Test that json-array output is sorted alphabetically by key
         let input = r#"
             user_pref("user.pref", "value1");
             pref("default.pref", "value2");
@@ -295,7 +301,7 @@ mod tests {
         "#;
 
         let prefs_with_types = crate::parser::parse_prefs_js_with_types(input).unwrap();
-        let array_output: Vec<crate::types::ConfigEntry> = prefs_with_types
+        let mut array_output: Vec<crate::types::ConfigEntry> = prefs_with_types
             .iter()
             .map(|(key, entry)| crate::types::ConfigEntry {
                 key: key.clone(),
@@ -304,6 +310,9 @@ mod tests {
                 explanation: crate::types::get_preference_explanation(key),
             })
             .collect();
+
+        // Sort to match production code behavior
+        array_output.sort_by(|a, b| a.key.cmp(&b.key));
 
         let json_str = serde_json::to_string_pretty(&array_output).unwrap();
 
@@ -324,6 +333,17 @@ mod tests {
         // explanation should NOT be present since these prefs don't have explanations
         let parsed: Vec<serde_json::Value> = serde_json::from_str(&json_str).unwrap();
         assert_eq!(parsed.len(), 4);
+
+        // Verify alphabetical ordering
+        let keys: Vec<&str> = parsed
+            .iter()
+            .map(|entry| entry["key"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            keys,
+            vec!["default.pref", "locked.pref", "sticky.pref", "user.pref"]
+        );
+
         for entry in parsed {
             assert!(entry.is_object());
             let obj = entry.as_object().unwrap();
@@ -461,12 +481,21 @@ mod tests {
         let parsed: Vec<serde_json::Value> = serde_json::from_str(&json_str).unwrap();
         assert_eq!(parsed.len(), 2);
 
-        // First entry (javascript.enabled) should have explanation
-        let js_entry = parsed[0].as_object().unwrap();
+        // Find entries by key instead of by index (deterministic regardless of order)
+        let js_entry = parsed
+            .iter()
+            .find(|entry| entry["key"] == "javascript.enabled")
+            .expect("javascript.enabled should be present")
+            .as_object()
+            .unwrap();
         assert!(js_entry.contains_key("explanation"));
 
-        // Second entry (browser.startup.homepage) should NOT have explanation
-        let homepage_entry = parsed[1].as_object().unwrap();
+        let homepage_entry = parsed
+            .iter()
+            .find(|entry| entry["key"] == "browser.startup.homepage")
+            .expect("browser.startup.homepage should be present")
+            .as_object()
+            .unwrap();
         assert!(!homepage_entry.contains_key("explanation"));
     }
 }
