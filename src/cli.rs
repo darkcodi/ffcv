@@ -29,6 +29,10 @@ pub enum Commands {
         #[arg(short = 'p', long, default_value = "default")]
         profile: String,
 
+        /// Read preferences from stdin instead of profile directory
+        #[arg(long, conflicts_with = "profile")]
+        stdin: bool,
+
         /// Path to Firefox profiles directory (overrides auto-detection)
         #[arg(short = 'd', long = "profiles-dir")]
         profiles_dir: Option<std::path::PathBuf>,

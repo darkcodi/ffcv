@@ -19,15 +19,26 @@ pub fn list_profiles(
     Ok(())
 }
 
-/// View configuration for a specific profile
-pub fn view_config(
+/// Read preference content from standard input
+fn read_stdin_content() -> Result<String, Box<dyn std::error::Error>> {
+    use std::io::{self, Read};
+
+    let mut buffer = String::new();
+    io::stdin().read_to_string(&mut buffer).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to read from stdin: {}. Make sure to pipe prefs.js content.",
+            e
+        )
+    })?;
+
+    Ok(buffer)
+}
+
+/// Read preference content from file system
+fn read_file_content(
     profile_name: &str,
     profiles_dir_opt: Option<&std::path::Path>,
-    query_patterns: &[&str],
-    get: Option<String>,
-    output_type: cli::OutputType,
-    unexplained_only: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<String, Box<dyn std::error::Error>> {
     let profile_path = find_profile_path(profile_name, profiles_dir_opt).map_err(|e| {
         anyhow::anyhow!(
             "Failed to find profile '{}': {}. Make sure Firefox is installed and the profile exists.\n\
@@ -38,12 +49,31 @@ pub fn view_config(
     })?;
 
     let prefs_path = get_prefs_path(&profile_path);
-    let content = std::fs::read_to_string(&prefs_path).map_err(|e| {
+    std::fs::read_to_string(&prefs_path).map_err(|e| {
         anyhow::anyhow!(
             "Failed to read prefs.js at {}: {e}. Make sure the file exists and is readable.",
             prefs_path.display()
         )
-    })?;
+        .into()
+    })
+}
+
+/// View configuration for a specific profile
+pub fn view_config(
+    stdin: bool,
+    profile_name: &str,
+    profiles_dir_opt: Option<&std::path::Path>,
+    query_patterns: &[&str],
+    get: Option<String>,
+    output_type: cli::OutputType,
+    unexplained_only: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Read content from appropriate source (stdin or file)
+    let content = if stdin {
+        read_stdin_content()?
+    } else {
+        read_file_content(profile_name, profiles_dir_opt)?
+    };
 
     // Parse preferences with or without type information based on output type
     let (preferences, preferences_with_types): (
@@ -53,19 +83,34 @@ pub fn view_config(
         cli::OutputType::JsonObject => {
             // Use standard parser for json-object (no type info needed)
             let prefs = crate::parser::parse_prefs_js(&content).map_err(|e| {
+                let source_hint = if stdin {
+                    "from stdin"
+                } else {
+                    "from prefs.js file"
+                };
                 anyhow::anyhow!(
-                    "Failed to parse prefs.js: {e}. The file may be corrupted or in an unexpected format."
+                    "Failed to parse preferences {}: {}. The input may be malformed.",
+                    source_hint,
+                    e
                 )
             })?;
             (prefs, None)
         }
         cli::OutputType::JsonArray => {
             // Use parser with type info for json-array
-            let prefs_with_types = crate::parser::parse_prefs_js_with_types(&content).map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to parse prefs.js: {e}. The file may be corrupted or in an unexpected format."
-                )
-            })?;
+            let prefs_with_types =
+                crate::parser::parse_prefs_js_with_types(&content).map_err(|e| {
+                    let source_hint = if stdin {
+                        "from stdin"
+                    } else {
+                        "from prefs.js file"
+                    };
+                    anyhow::anyhow!(
+                        "Failed to parse preferences {}: {}. The input may be malformed.",
+                        source_hint,
+                        e
+                    )
+                })?;
             // Also create Config for query filtering
             let prefs: Config = prefs_with_types
                 .iter()

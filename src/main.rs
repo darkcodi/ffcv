@@ -18,6 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli::Commands::Config {
             profile,
             profiles_dir,
+            stdin,
             query,
             get,
             output_type,
@@ -26,6 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Convert Vec<String> to Vec<&str> for query_preferences
             let query_refs: Vec<&str> = query.iter().map(|s| s.as_str()).collect();
             commands::view_config(
+                stdin,
                 &profile,
                 profiles_dir.as_deref(),
                 &query_refs,
