@@ -88,7 +88,13 @@ fn output_raw_value(value: &serde_json::Value) -> Result<(), Box<dyn std::error:
     match value {
         serde_json::Value::String(s) => println!("{}", s),
         serde_json::Value::Bool(b) => println!("{}", b),
-        serde_json::Value::Number(n) => println!("{}", n),
+        serde_json::Value::Number(n) => {
+            if n.is_i64() {
+                println!("{}", n.as_i64().unwrap());
+            } else {
+                println!("{}", n.as_f64().unwrap());
+            }
+        }
         serde_json::Value::Null => println!("null"),
         serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
             // Complex types still output as JSON
@@ -96,4 +102,92 @@ fn output_raw_value(value: &serde_json::Value) -> Result<(), Box<dyn std::error:
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    /// Helper function to test the output formatting logic
+    fn format_value(value: &serde_json::Value) -> String {
+        match value {
+            serde_json::Value::Number(n) => {
+                if n.is_i64() {
+                    format!("{}", n.as_i64().unwrap())
+                } else {
+                    format!("{}", n.as_f64().unwrap())
+                }
+            }
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Bool(b) => format!("{}", b),
+            serde_json::Value::Null => "null".to_string(),
+            _ => value.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_output_raw_value_integer() {
+        let value = json!(3);
+        let output = format_value(&value);
+        assert_eq!(output, "3");
+        assert!(!output.contains('.'));
+    }
+
+    #[test]
+    fn test_output_raw_value_negative_integer() {
+        let value = json!(-42);
+        let output = format_value(&value);
+        assert_eq!(output, "-42");
+        assert!(!output.contains('.'));
+    }
+
+    #[test]
+    fn test_output_raw_value_zero() {
+        let value = json!(0);
+        let output = format_value(&value);
+        assert_eq!(output, "0");
+        assert!(!output.contains('.'));
+    }
+
+    #[test]
+    fn test_output_raw_value_float() {
+        let value = json!(3.14);
+        let output = format_value(&value);
+        assert_eq!(output, "3.14");
+        assert!(output.contains('.'));
+    }
+
+    #[test]
+    fn test_output_raw_value_float_whole_number() {
+        let value = serde_json::Value::Number(serde_json::Number::from_f64(3.0).unwrap());
+        let output = format_value(&value);
+        assert_eq!(output, "3");
+        // This is the key test: a whole number float should display as integer
+        assert!(!output.contains('.'));
+    }
+
+    #[test]
+    fn test_output_raw_value_string() {
+        let value = json!("test value");
+        let output = format_value(&value);
+        assert_eq!(output, "test value");
+    }
+
+    #[test]
+    fn test_output_raw_value_bool() {
+        let value = json!(true);
+        let output = format_value(&value);
+        assert_eq!(output, "true");
+
+        let value = json!(false);
+        let output = format_value(&value);
+        assert_eq!(output, "false");
+    }
+
+    #[test]
+    fn test_output_raw_value_null() {
+        let value = json!(null);
+        let output = format_value(&value);
+        assert_eq!(output, "null");
+    }
 }
