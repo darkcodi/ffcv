@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// Re-export the explanation function for convenience
+pub use crate::explanations::get_preference_explanation;
+
 /// Firefox preference types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PrefType {
@@ -32,4 +35,6 @@ pub struct ConfigEntry {
     pub value: serde_json::Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pref_type: Option<PrefType>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub explanation: Option<String>,
 }

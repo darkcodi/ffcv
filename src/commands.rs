@@ -103,10 +103,12 @@ pub fn view_config(
                     let pref_type = prefs_with_types
                         .get(key)
                         .map(|entry| entry.pref_type.clone());
+                    let explanation = crate::types::get_preference_explanation(key);
                     crate::types::ConfigEntry {
                         key: key.clone(),
                         value: value.clone(),
                         pref_type,
+                        explanation,
                     }
                 })
                 .collect();
@@ -168,12 +170,15 @@ mod tests {
             key: "test.key".to_string(),
             value: json!("test value"),
             pref_type: Some(PrefType::User),
+            explanation: None,
         };
 
         let json_str = serde_json::to_string(&entry).unwrap();
         assert!(json_str.contains("\"pref_type\":\"user\""));
         assert!(json_str.contains("\"key\":\"test.key\""));
         assert!(json_str.contains("\"value\":\"test value\""));
+        // explanation should not be present when None
+        assert!(!json_str.contains("explanation"));
     }
 
     #[test]
@@ -183,6 +188,7 @@ mod tests {
             key: "test.key".to_string(),
             value: json!("test value"),
             pref_type: None,
+            explanation: None,
         };
 
         let json_str = serde_json::to_string(&entry).unwrap();
@@ -190,6 +196,8 @@ mod tests {
         assert!(!json_str.contains("pref_type"));
         assert!(json_str.contains("\"key\":\"test.key\""));
         assert!(json_str.contains("\"value\":\"test value\""));
+        // explanation should also not be present when None
+        assert!(!json_str.contains("explanation"));
     }
 
     #[test]
@@ -225,6 +233,7 @@ mod tests {
                 key: key.clone(),
                 value: entry.value.clone(),
                 pref_type: Some(entry.pref_type.clone()),
+                explanation: crate::types::get_preference_explanation(key),
             })
             .collect();
 
@@ -244,6 +253,7 @@ mod tests {
         assert!(json_str.contains("sticky.pref"));
 
         // Verify structure (should have key, value, pref_type for each entry)
+        // explanation should NOT be present since these prefs don't have explanations
         let parsed: Vec<serde_json::Value> = serde_json::from_str(&json_str).unwrap();
         assert_eq!(parsed.len(), 4);
         for entry in parsed {
@@ -252,6 +262,8 @@ mod tests {
             assert!(obj.contains_key("key"));
             assert!(obj.contains_key("value"));
             assert!(obj.contains_key("pref_type"));
+            // explanation field should not be present for these unexplained prefs
+            assert!(!obj.contains_key("explanation"));
         }
     }
 
@@ -319,5 +331,74 @@ mod tests {
         let value = json!(null);
         let output = format_value(&value);
         assert_eq!(output, "null");
+    }
+
+    #[test]
+    fn test_config_entry_serialization_with_explanation() {
+        // Test that ConfigEntry includes explanation field in JSON output
+        let entry = crate::types::ConfigEntry {
+            key: "javascript.enabled".to_string(),
+            value: json!(true),
+            pref_type: Some(PrefType::Default),
+            explanation: Some(
+                "Master switch to enable or disable JavaScript execution.".to_string(),
+            ),
+        };
+
+        let json_str = serde_json::to_string(&entry).unwrap();
+        assert!(json_str.contains("\"explanation\":"));
+        assert!(json_str.contains("Master switch to enable or disable JavaScript execution"));
+    }
+
+    #[test]
+    fn test_config_entry_serialization_without_explanation() {
+        // Test that ConfigEntry without explanation does not include the field
+        let entry = crate::types::ConfigEntry {
+            key: "unknown.pref".to_string(),
+            value: json!("test"),
+            pref_type: None,
+            explanation: None,
+        };
+
+        let json_str = serde_json::to_string(&entry).unwrap();
+        // explanation field should not be in output when None
+        assert!(!json_str.contains("explanation"));
+    }
+
+    #[test]
+    fn test_json_array_output_includes_explanations() {
+        // Test full pipeline with explanations
+        let input = r#"
+            user_pref("javascript.enabled", true);
+            user_pref("browser.startup.homepage", "https://example.com");
+        "#;
+
+        let prefs_with_types = crate::parser::parse_prefs_js_with_types(input).unwrap();
+        let array_output: Vec<crate::types::ConfigEntry> = prefs_with_types
+            .iter()
+            .map(|(key, entry)| crate::types::ConfigEntry {
+                key: key.clone(),
+                value: entry.value.clone(),
+                pref_type: Some(entry.pref_type.clone()),
+                explanation: crate::types::get_preference_explanation(key),
+            })
+            .collect();
+
+        let json_str = serde_json::to_string_pretty(&array_output).unwrap();
+
+        // Verify javascript.enabled has its explanation
+        assert!(json_str.contains("Master switch to enable or disable JavaScript"));
+
+        // Verify entries are handled correctly
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed.len(), 2);
+
+        // First entry (javascript.enabled) should have explanation
+        let js_entry = parsed[0].as_object().unwrap();
+        assert!(js_entry.contains_key("explanation"));
+
+        // Second entry (browser.startup.homepage) should NOT have explanation
+        let homepage_entry = parsed[1].as_object().unwrap();
+        assert!(!homepage_entry.contains_key("explanation"));
     }
 }
