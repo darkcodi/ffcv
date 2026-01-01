@@ -209,11 +209,13 @@ impl<'a> Parser<'a> {
     /// Parse a value (string, number, boolean, null)
     fn parse_value(&mut self) -> Result<serde_json::Value, anyhow::Error> {
         match &self.current {
-            Some(Token::String(s)) => {
-                let result = serde_json::Value::String(s.clone());
-                self.current.take();
+            Some(Token::String(_)) => {
+                let token = std::mem::take(&mut self.current);
                 self.advance();
-                Ok(result)
+                match token {
+                    Some(Token::String(s)) => Ok(serde_json::Value::String(s)),
+                    _ => unreachable!(),
+                }
             }
             Some(Token::Number(n)) => {
                 let num_value = *n;
@@ -283,12 +285,14 @@ impl<'a> Parser<'a> {
     /// Expect a string token and return its value
     fn expect_string(&mut self) -> Result<String, anyhow::Error> {
         match &self.current {
-            Some(Token::String(s)) => {
-                // Clone the string value before consuming the token
-                let result = s.clone();
-                self.current.take();
+            Some(Token::String(_)) => {
+                // Take the token to extract the String without cloning
+                let token = std::mem::take(&mut self.current);
                 self.advance();
-                Ok(result)
+                match token {
+                    Some(Token::String(s)) => Ok(s),
+                    _ => unreachable!(),
+                }
             }
             Some(token) => Err(anyhow::anyhow!(
                 "Parse error at line {}:{}: Expected string, got {:?}",

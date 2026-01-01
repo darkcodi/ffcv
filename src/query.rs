@@ -13,11 +13,19 @@ pub fn query_preferences(preferences: &Config, patterns: &[&str]) -> Result<Conf
         .collect::<Result<Vec<_>, _>>()?;
 
     // Query preferences: keep if ANY pattern matches
-    let queried: Config = preferences
+    // First count matching entries to pre-allocate HashMap capacity
+    let matching_count = preferences
         .iter()
         .filter(|(key, _)| compiled_patterns.iter().any(|pattern| pattern.matches(key)))
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect();
+        .count();
+
+    // Pre-allocate HashMap with exact capacity to avoid reallocations
+    let mut queried = Config::with_capacity(matching_count);
+    for (key, value) in preferences.iter() {
+        if compiled_patterns.iter().any(|pattern| pattern.matches(key)) {
+            queried.insert(key.clone(), value.clone());
+        }
+    }
 
     Ok(queried)
 }
