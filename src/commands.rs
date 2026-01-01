@@ -41,11 +41,35 @@ pub fn view_config(
         )
     })?;
 
-    let preferences: Config = crate::parser::parse_prefs_js(&content).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to parse prefs.js: {e}. The file may be corrupted or in an unexpected format."
-        )
-    })?;
+    // Parse preferences with or without type information based on output type
+    let (preferences, preferences_with_types): (
+        Config,
+        Option<std::collections::HashMap<String, crate::types::PrefEntry>>,
+    ) = match output_type {
+        cli::OutputType::JsonObject => {
+            // Use standard parser for json-object (no type info needed)
+            let prefs = crate::parser::parse_prefs_js(&content).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to parse prefs.js: {e}. The file may be corrupted or in an unexpected format."
+                )
+            })?;
+            (prefs, None)
+        }
+        cli::OutputType::JsonArray => {
+            // Use parser with type info for json-array
+            let prefs_with_types = crate::parser::parse_prefs_js_with_types(&content).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to parse prefs.js: {e}. The file may be corrupted or in an unexpected format."
+                )
+            })?;
+            // Also create Config for query filtering
+            let prefs: Config = prefs_with_types
+                .iter()
+                .map(|(k, v)| (k.clone(), v.value.clone()))
+                .collect();
+            (prefs, Some(prefs_with_types))
+        }
+    };
 
     // Handle --get mode: single preference retrieval with raw output
     if let Some(get_key) = get {
@@ -68,11 +92,22 @@ pub fn view_config(
     let json = match output_type {
         cli::OutputType::JsonObject => serde_json::to_string_pretty(&output_config)?,
         cli::OutputType::JsonArray => {
+            // Use the type information we parsed earlier
+            let prefs_with_types = preferences_with_types
+                .as_ref()
+                .expect("Type info should be available for json-array");
             let array_output: Vec<crate::types::ConfigEntry> = output_config
                 .iter()
-                .map(|(key, value)| crate::types::ConfigEntry {
-                    key: key.clone(),
-                    value: value.clone(),
+                .map(|(key, value)| {
+                    // Look up the type information
+                    let pref_type = prefs_with_types
+                        .get(key)
+                        .map(|entry| entry.pref_type.clone());
+                    crate::types::ConfigEntry {
+                        key: key.clone(),
+                        value: value.clone(),
+                        pref_type,
+                    }
                 })
                 .collect();
             serde_json::to_string_pretty(&array_output)?
@@ -106,6 +141,7 @@ fn output_raw_value(value: &serde_json::Value) -> Result<(), Box<dyn std::error:
 
 #[cfg(test)]
 mod tests {
+    use crate::types::PrefType;
     use serde_json::json;
 
     /// Helper function to test the output formatting logic
@@ -122,6 +158,100 @@ mod tests {
             serde_json::Value::Bool(b) => format!("{}", b),
             serde_json::Value::Null => "null".to_string(),
             _ => value.to_string(),
+        }
+    }
+
+    #[test]
+    fn test_config_entry_serialization_with_pref_type() {
+        // Test that ConfigEntry serializes correctly with pref_type
+        let entry = crate::types::ConfigEntry {
+            key: "test.key".to_string(),
+            value: json!("test value"),
+            pref_type: Some(PrefType::User),
+        };
+
+        let json_str = serde_json::to_string(&entry).unwrap();
+        assert!(json_str.contains("\"pref_type\":\"user\""));
+        assert!(json_str.contains("\"key\":\"test.key\""));
+        assert!(json_str.contains("\"value\":\"test value\""));
+    }
+
+    #[test]
+    fn test_config_entry_serialization_without_pref_type() {
+        // Test that ConfigEntry serializes correctly without pref_type (None)
+        let entry = crate::types::ConfigEntry {
+            key: "test.key".to_string(),
+            value: json!("test value"),
+            pref_type: None,
+        };
+
+        let json_str = serde_json::to_string(&entry).unwrap();
+        // pref_type should not be in the output when None (due to skip_serializing_if)
+        assert!(!json_str.contains("pref_type"));
+        assert!(json_str.contains("\"key\":\"test.key\""));
+        assert!(json_str.contains("\"value\":\"test value\""));
+    }
+
+    #[test]
+    fn test_pref_type_serialization() {
+        // Test all pref type variants serialize correctly
+        let tests = vec![
+            (PrefType::User, "user"),
+            (PrefType::Default, "default"),
+            (PrefType::Locked, "locked"),
+            (PrefType::Sticky, "sticky"),
+        ];
+
+        for (pref_type, expected_str) in tests {
+            let json_str = serde_json::to_string(&pref_type).unwrap();
+            assert_eq!(json_str, format!("\"{}\"", expected_str));
+        }
+    }
+
+    #[test]
+    fn test_json_array_output_with_types() {
+        // Test that json-array output includes pref_type for all entries
+        let input = r#"
+            user_pref("user.pref", "value1");
+            pref("default.pref", "value2");
+            lock_pref("locked.pref", "value3");
+            sticky_pref("sticky.pref", "value4");
+        "#;
+
+        let prefs_with_types = crate::parser::parse_prefs_js_with_types(input).unwrap();
+        let array_output: Vec<crate::types::ConfigEntry> = prefs_with_types
+            .iter()
+            .map(|(key, entry)| crate::types::ConfigEntry {
+                key: key.clone(),
+                value: entry.value.clone(),
+                pref_type: Some(entry.pref_type.clone()),
+            })
+            .collect();
+
+        let json_str = serde_json::to_string_pretty(&array_output).unwrap();
+
+        // Verify pref_type field is present for all entries
+        assert!(json_str.contains("pref_type"));
+        assert!(json_str.contains("\"user\""));
+        assert!(json_str.contains("\"default\""));
+        assert!(json_str.contains("\"locked\""));
+        assert!(json_str.contains("\"sticky\""));
+
+        // Verify keys are present
+        assert!(json_str.contains("user.pref"));
+        assert!(json_str.contains("default.pref"));
+        assert!(json_str.contains("locked.pref"));
+        assert!(json_str.contains("sticky.pref"));
+
+        // Verify structure (should have key, value, pref_type for each entry)
+        let parsed: Vec<serde_json::Value> = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed.len(), 4);
+        for entry in parsed {
+            assert!(entry.is_object());
+            let obj = entry.as_object().unwrap();
+            assert!(obj.contains_key("key"));
+            assert!(obj.contains_key("value"));
+            assert!(obj.contains_key("pref_type"));
         }
     }
 

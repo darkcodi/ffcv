@@ -4,12 +4,21 @@
 //! Firefox prefs.js files into a HashMap of preference values.
 
 use crate::lexer::{Lexer, Token};
+use crate::types::{PrefEntry, PrefType};
 use std::collections::HashMap;
 
 /// Parse the prefs.js file and extract all preferences
 pub fn parse_prefs_js(content: &str) -> Result<HashMap<String, serde_json::Value>, anyhow::Error> {
     let mut parser = Parser::new(content);
     parser.parse()
+}
+
+/// Parse the prefs.js file and extract all preferences with their types
+pub fn parse_prefs_js_with_types(
+    content: &str,
+) -> Result<HashMap<String, PrefEntry>, anyhow::Error> {
+    let mut parser = Parser::new(content);
+    parser.parse_with_types()
 }
 
 /// Parser for Firefox preference files
@@ -73,6 +82,31 @@ impl<'a> Parser<'a> {
         Ok(preferences)
     }
 
+    /// Parse the entire input into a HashMap of preferences with their types
+    fn parse_with_types(&mut self) -> Result<HashMap<String, PrefEntry>, anyhow::Error> {
+        let mut preferences = HashMap::new();
+
+        loop {
+            match &self.current {
+                None => {
+                    // Error occurred during lexing
+                    return Err(anyhow::anyhow!(
+                        "Parse error at line {}:{}: Lexer error",
+                        self.current_line,
+                        self.current_column
+                    ));
+                }
+                Some(Token::Eof) => break,
+                Some(_) => {
+                    let (key, value, pref_type) = self.parse_statement_with_type()?;
+                    preferences.insert(key.clone(), PrefEntry { value, pref_type });
+                }
+            }
+        }
+
+        Ok(preferences)
+    }
+
     /// Parse a single statement: pref_type "(" key "," value ")" ";"
     fn parse_statement(&mut self) -> Result<(String, serde_json::Value), anyhow::Error> {
         // Parse the pref function name (user_pref, pref, lock_pref, sticky_pref)
@@ -111,6 +145,65 @@ impl<'a> Parser<'a> {
         self.expect_token(Token::Semicolon)?;
 
         Ok((key, value))
+    }
+
+    /// Parse a single statement with type information: pref_type "(" key "," value ")" ";"
+    fn parse_statement_with_type(
+        &mut self,
+    ) -> Result<(String, serde_json::Value, PrefType), anyhow::Error> {
+        // Parse and capture the pref function name (user_pref, pref, lock_pref, sticky_pref)
+        let pref_type = self.parse_pref_type_identifier()?;
+
+        // Expect left parenthesis
+        self.expect_token(Token::LeftParen)?;
+
+        // Expect key (string)
+        let key = self.expect_string()?;
+
+        // Expect comma
+        self.expect_token(Token::Comma)?;
+
+        // Parse value
+        let value = self.parse_value()?;
+
+        // Expect right parenthesis
+        self.expect_token(Token::RightParen)?;
+
+        // Expect semicolon
+        self.expect_token(Token::Semicolon)?;
+
+        Ok((key, value, pref_type))
+    }
+
+    /// Parse the pref type identifier and return the corresponding PrefType
+    fn parse_pref_type_identifier(&mut self) -> Result<PrefType, anyhow::Error> {
+        match &self.current {
+            Some(Token::Identifier(ident)) => {
+                let pref_type = match ident.as_str() {
+                    "user_pref" => PrefType::User,
+                    "pref" => PrefType::Default,
+                    "lock_pref" => PrefType::Locked,
+                    "sticky_pref" => PrefType::Sticky,
+                    _ => {
+                        return Err(anyhow::anyhow!(
+                            "Parse error at line {}:{}: Unknown pref function '{}'. Expected user_pref, pref, lock_pref, or sticky_pref",
+                            self.current_line,
+                            self.current_column,
+                            ident
+                        ));
+                    }
+                };
+                // Consume the identifier
+                self.advance();
+                Ok(pref_type)
+            }
+            _ => Err(anyhow::anyhow!(
+                "Parse error at line {}:{}: Expected pref function name (user_pref, pref, lock_pref, sticky_pref), got {:?}",
+                self.current_line,
+                self.current_column,
+                self.current
+            )),
+        }
     }
 
     /// Parse a value (string, number, boolean, null)
@@ -634,5 +727,103 @@ mod tests {
         let input = r#"user_pref("test", "\00");"#;
         let result = parse_prefs_js(input);
         assert!(result.is_err());
+    }
+
+    // Tests for parse_prefs_js_with_types
+
+    #[test]
+    fn test_parse_user_pref_with_type() {
+        let input = r#"user_pref("browser.startup.homepage", "https://example.com");"#;
+        let result = parse_prefs_js_with_types(input).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result["browser.startup.homepage"].pref_type,
+            crate::types::PrefType::User
+        );
+        assert_eq!(
+            result["browser.startup.homepage"].value,
+            serde_json::Value::String("https://example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_default_pref_with_type() {
+        let input = r#"pref("javascript.enabled", true);"#;
+        let result = parse_prefs_js_with_types(input).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result["javascript.enabled"].pref_type,
+            crate::types::PrefType::Default
+        );
+        assert_eq!(
+            result["javascript.enabled"].value,
+            serde_json::Value::Bool(true)
+        );
+    }
+
+    #[test]
+    fn test_parse_locked_pref_with_type() {
+        let input = r#"lock_pref("network.proxy.type", 1);"#;
+        let result = parse_prefs_js_with_types(input).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result["network.proxy.type"].pref_type,
+            crate::types::PrefType::Locked
+        );
+        match &result["network.proxy.type"].value {
+            serde_json::Value::Number(n) => {
+                assert_eq!(n.as_f64(), Some(1.0));
+            }
+            _ => panic!("Expected number"),
+        }
+    }
+
+    #[test]
+    fn test_parse_sticky_pref_with_type() {
+        let input = r#"sticky_pref("test.pref", "sticky value");"#;
+        let result = parse_prefs_js_with_types(input).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result["test.pref"].pref_type,
+            crate::types::PrefType::Sticky
+        );
+        assert_eq!(
+            result["test.pref"].value,
+            serde_json::Value::String("sticky value".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parse_mixed_pref_types() {
+        let input = r#"
+            user_pref("user.pref", "value1");
+            pref("default.pref", "value2");
+            lock_pref("locked.pref", "value3");
+            sticky_pref("sticky.pref", "value4");
+        "#;
+        let result = parse_prefs_js_with_types(input).unwrap();
+        assert_eq!(result.len(), 4);
+        assert_eq!(result["user.pref"].pref_type, crate::types::PrefType::User);
+        assert_eq!(
+            result["default.pref"].pref_type,
+            crate::types::PrefType::Default
+        );
+        assert_eq!(
+            result["locked.pref"].pref_type,
+            crate::types::PrefType::Locked
+        );
+        assert_eq!(
+            result["sticky.pref"].pref_type,
+            crate::types::PrefType::Sticky
+        );
+    }
+
+    #[test]
+    fn test_parse_unknown_pref_function_error() {
+        let input = r#"unknown_pref("test", "value");"#;
+        let result = parse_prefs_js_with_types(input);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Unknown pref function"));
     }
 }
