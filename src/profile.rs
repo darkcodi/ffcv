@@ -23,8 +23,11 @@ pub struct ProfileInfo {
 }
 
 /// Find the Firefox profile directory based on the profile name
-pub fn find_profile_path(profile_name: &str) -> Result<PathBuf, anyhow::Error> {
-    let profiles_dir = get_profiles_directory()?;
+pub fn find_profile_path(
+    profile_name: &str,
+    profiles_dir_opt: Option<&std::path::Path>,
+) -> Result<PathBuf, anyhow::Error> {
+    let profiles_dir = get_profiles_directory(profiles_dir_opt)?;
     let profiles_ini = profiles_dir.join("profiles.ini");
 
     // Try parsing profiles.ini first (primary method)
@@ -402,8 +405,10 @@ fn scan_profiles_directory(
 }
 
 /// List all available Firefox profiles
-pub fn list_profiles() -> Result<Vec<ProfileInfo>, anyhow::Error> {
-    let profiles_dir = get_profiles_directory()?;
+pub fn list_profiles(
+    profiles_dir_opt: Option<&std::path::Path>,
+) -> Result<Vec<ProfileInfo>, anyhow::Error> {
+    let profiles_dir = get_profiles_directory(profiles_dir_opt)?;
     let profiles_ini = profiles_dir.join("profiles.ini");
 
     if !profiles_ini.exists() {
@@ -440,8 +445,55 @@ pub fn list_profiles() -> Result<Vec<ProfileInfo>, anyhow::Error> {
     Ok(profile_infos)
 }
 
-/// Get the base profiles directory for the current OS
-fn get_profiles_directory() -> Result<PathBuf, anyhow::Error> {
+/// Get the profiles directory path from CLI, env var, or auto-detection
+///
+/// Priority:
+/// 1. Manual path provided via CLI or parameter
+/// 2. MOZ_PROFILES_DIR environment variable
+/// 3. Auto-detection based on OS
+pub fn get_profiles_directory(
+    manual_path: Option<&std::path::Path>,
+) -> Result<PathBuf, anyhow::Error> {
+    // Priority 1: Use manually specified path (from CLI or direct parameter)
+    if let Some(path) = manual_path {
+        return validate_and_use_profiles_dir(path);
+    }
+
+    // Priority 2: Check MOZ_PROFILES_DIR environment variable
+    if let Ok(env_path) = std::env::var("MOZ_PROFILES_DIR") {
+        let path = PathBuf::from(env_path);
+        return validate_and_use_profiles_dir(&path);
+    }
+
+    // Priority 3: Auto-detect based on OS
+    auto_detect_profiles_directory()
+}
+
+/// Validate and return the profiles directory path
+fn validate_and_use_profiles_dir(path: &std::path::Path) -> Result<PathBuf, anyhow::Error> {
+    // Check if path exists
+    if !path.exists() {
+        return Err(anyhow::anyhow!(
+            "Profiles directory does not exist: {}\n\
+             Please verify the path and try again.",
+            path.display()
+        ));
+    }
+
+    // Check if path is a directory
+    if !path.is_dir() {
+        return Err(anyhow::anyhow!(
+            "Profiles directory path is not a directory: {}\n\
+             Please provide a directory path, not a file.",
+            path.display()
+        ));
+    }
+
+    Ok(path.to_path_buf())
+}
+
+/// Auto-detect profiles directory based on operating system
+fn auto_detect_profiles_directory() -> Result<PathBuf, anyhow::Error> {
     #[cfg(target_os = "linux")]
     {
         let home = std::env::var("HOME")
@@ -482,8 +534,9 @@ mod tests {
     fn test_get_profiles_directory_linux() {
         #[cfg(target_os = "linux")]
         {
+            std::env::remove_var("MOZ_PROFILES_DIR");
             std::env::set_var("HOME", "/home/testuser");
-            let dir = get_profiles_directory().unwrap();
+            let dir = get_profiles_directory(None).unwrap();
             assert!(dir
                 .to_string_lossy()
                 .contains("/home/testuser/.mozilla/firefox"));
@@ -494,8 +547,9 @@ mod tests {
     fn test_get_profiles_directory_macos() {
         #[cfg(target_os = "macos")]
         {
+            std::env::remove_var("MOZ_PROFILES_DIR");
             std::env::set_var("HOME", "/Users/testuser");
-            let dir = get_profiles_directory().unwrap();
+            let dir = get_profiles_directory(None).unwrap();
             assert!(dir
                 .to_string_lossy()
                 .contains("/Users/testuser/Library/Application Support/Firefox"));
@@ -605,5 +659,73 @@ Locked=1
             Some("Profiles/abcdefgh.default".to_string())
         );
         assert_eq!(ini.get("308046B0AF4A39CB", "Locked"), Some("1".to_string()));
+    }
+
+    #[test]
+    fn test_profiles_dir_validation_nonexistent() {
+        // Test validation with non-existent path
+        let result = get_profiles_directory(Some(std::path::Path::new("/nonexistent/path")));
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("does not exist"));
+        assert!(error_msg.contains("/nonexistent/path"));
+    }
+
+    #[test]
+    fn test_profiles_dir_validation_file_not_directory() {
+        // Test validation when path is a file, not a directory
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        let result = get_profiles_directory(Some(temp_file.path()));
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("not a directory"));
+    }
+
+    #[test]
+    fn test_profiles_dir_validation_valid_directory() {
+        // Test validation with a valid temporary directory
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let result = get_profiles_directory(Some(temp_dir.path()));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), temp_dir.path());
+    }
+
+    #[test]
+    fn test_env_var_priority() {
+        use std::env;
+
+        // Make sure MOZ_PROFILES_DIR is not set
+        env::remove_var("MOZ_PROFILES_DIR");
+
+        // Test 1: No env var, no manual path - should auto-detect
+        let result = get_profiles_directory(None);
+        assert!(result.is_ok());
+
+        // Test 2: Env var is set, no manual path - should use env var
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        env::set_var("MOZ_PROFILES_DIR", temp_dir.path().to_str().unwrap());
+        let result = get_profiles_directory(None);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), temp_dir.path());
+        env::remove_var("MOZ_PROFILES_DIR");
+
+        // Test 3: Manual path overrides env var
+        let temp_dir2 = tempfile::TempDir::new().unwrap();
+        env::set_var("MOZ_PROFILES_DIR", "/should/not/use/this");
+        let result = get_profiles_directory(Some(temp_dir2.path()));
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), temp_dir2.path());
+        env::remove_var("MOZ_PROFILES_DIR");
+    }
+
+    #[test]
+    fn test_profiles_dir_with_invalid_env_var() {
+        use std::env;
+
+        // Set env var to non-existent path
+        env::set_var("MOZ_PROFILES_DIR", "/this/path/does/not/exist");
+        let result = get_profiles_directory(None);
+        assert!(result.is_err());
+        env::remove_var("MOZ_PROFILES_DIR");
     }
 }

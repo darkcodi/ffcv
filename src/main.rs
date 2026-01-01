@@ -14,9 +14,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     match cli.command {
-        cli::Commands::Profile => commands::list_profiles(),
+        cli::Commands::Profile { profiles_dir } => commands::list_profiles(profiles_dir.as_deref()),
         cli::Commands::Config {
             profile,
+            profiles_dir,
             query,
             get,
             output_type,
@@ -24,7 +25,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } => {
             // Convert Vec<String> to Vec<&str> for query_preferences
             let query_refs: Vec<&str> = query.iter().map(|s| s.as_str()).collect();
-            commands::view_config(&profile, &query_refs, get, output_type, unexplained_only)
+            commands::view_config(
+                &profile,
+                profiles_dir.as_deref(),
+                &query_refs,
+                get,
+                output_type,
+                unexplained_only,
+            )
         }
     }
 }

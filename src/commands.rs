@@ -4,8 +4,10 @@ use crate::query;
 use crate::types::Config;
 
 /// List all available Firefox profiles
-pub fn list_profiles() -> Result<(), Box<dyn std::error::Error>> {
-    let profiles = list_profiles_impl().map_err(|e| {
+pub fn list_profiles(
+    profiles_dir_opt: Option<&std::path::Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let profiles = list_profiles_impl(profiles_dir_opt).map_err(|e| {
         anyhow::anyhow!(
             "Failed to list profiles: {}. Make sure Firefox is installed.",
             e
@@ -20,12 +22,13 @@ pub fn list_profiles() -> Result<(), Box<dyn std::error::Error>> {
 /// View configuration for a specific profile
 pub fn view_config(
     profile_name: &str,
+    profiles_dir_opt: Option<&std::path::Path>,
     query_patterns: &[&str],
     get: Option<String>,
     output_type: cli::OutputType,
     unexplained_only: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let profile_path = find_profile_path(profile_name).map_err(|e| {
+    let profile_path = find_profile_path(profile_name, profiles_dir_opt).map_err(|e| {
         anyhow::anyhow!(
             "Failed to find profile '{}': {}. Make sure Firefox is installed and the profile exists.\n\
              Use 'ffcv profile' to see available profiles.",

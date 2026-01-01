@@ -17,13 +17,21 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// List all available Firefox profiles
-    Profile,
+    Profile {
+        /// Path to Firefox profiles directory (overrides auto-detection)
+        #[arg(short = 'd', long = "profiles-dir")]
+        profiles_dir: Option<std::path::PathBuf>,
+    },
 
     /// View Firefox configuration for a profile
     Config {
         /// Firefox profile name (default: "default")
         #[arg(short = 'p', long, default_value = "default")]
         profile: String,
+
+        /// Path to Firefox profiles directory (overrides auto-detection)
+        #[arg(short = 'd', long = "profiles-dir")]
+        profiles_dir: Option<std::path::PathBuf>,
 
         /// Query preferences by glob pattern (e.g., "network.*", "browser.*.enabled")
         #[arg(long, conflicts_with = "get")]
