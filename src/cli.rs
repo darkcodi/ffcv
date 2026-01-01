@@ -37,6 +37,10 @@ pub enum Commands {
         #[arg(short = 'd', long = "profiles-dir")]
         profiles_dir: Option<std::path::PathBuf>,
 
+        /// Maximum file size in bytes (default: 10MB)
+        #[arg(long = "max-file-size", default_value = "10485760")]
+        max_file_size: usize,
+
         /// Query preferences by glob pattern (e.g., "network.*", "browser.*.enabled")
         #[arg(long, conflicts_with = "get")]
         query: Vec<String>,
