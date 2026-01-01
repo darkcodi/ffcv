@@ -20,10 +20,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             query,
             get,
             output_type,
+            unexplained_only,
         } => {
             // Convert Vec<String> to Vec<&str> for query_preferences
             let query_refs: Vec<&str> = query.iter().map(|s| s.as_str()).collect();
-            commands::view_config(&profile, &query_refs, get, output_type)
+            commands::view_config(&profile, &query_refs, get, output_type, unexplained_only)
         }
     }
 }

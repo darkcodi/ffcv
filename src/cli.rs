@@ -40,6 +40,10 @@ pub enum Commands {
             conflicts_with = "get"
         )]
         output_type: OutputType,
+
+        /// Show only preferences without explanations (hidden flag)
+        #[arg(long = "unexplained-only", hide = true)]
+        unexplained_only: bool,
     },
 }
 

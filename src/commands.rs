@@ -23,6 +23,7 @@ pub fn view_config(
     query_patterns: &[&str],
     get: Option<String>,
     output_type: cli::OutputType,
+    unexplained_only: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let profile_path = find_profile_path(profile_name).map_err(|e| {
         anyhow::anyhow!(
@@ -74,6 +75,17 @@ pub fn view_config(
     // Handle --get mode: single preference retrieval with raw output
     if let Some(get_key) = get {
         if let Some(value) = preferences.get(&get_key) {
+            // Check unexplained-only flag
+            if unexplained_only {
+                let has_explanation = crate::types::get_preference_explanation(&get_key).is_some();
+                if has_explanation {
+                    return Err(anyhow::anyhow!(
+                        "Preference '{}' has an explanation, but --unexplained-only was specified",
+                        get_key
+                    )
+                    .into());
+                }
+            }
             output_raw_value(value)?;
             return Ok(());
         }
@@ -82,12 +94,20 @@ pub fn view_config(
     }
 
     // Apply queries if provided
-    let output_config = if !query_patterns.is_empty() {
+    let mut output_config = if !query_patterns.is_empty() {
         query::query_preferences(&preferences, query_patterns)
             .map_err(|e| anyhow::anyhow!("Failed to apply query: {}", e))?
     } else {
         preferences
     };
+
+    // Apply unexplained-only filter if flag is set
+    if unexplained_only {
+        output_config.retain(|key, _| {
+            // Keep only preferences that don't have explanations
+            crate::types::get_preference_explanation(key).is_none()
+        });
+    }
 
     let json = match output_type {
         cli::OutputType::JsonObject => serde_json::to_string_pretty(&output_config)?,
