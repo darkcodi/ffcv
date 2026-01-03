@@ -43,7 +43,9 @@
 //! "#;
 //!
 //! let prefs = parse_prefs_js_with_types(content)?;
-//! let homepage = &prefs["browser.startup.homepage"];
+//! let homepage = prefs.iter()
+//!     .find(|e| e.key == "browser.startup.homepage")
+//!     .unwrap();
 //! assert_eq!(homepage.pref_type, PrefType::User);
 //! # Ok::<(), ffcv::Error>(())
 //! ```

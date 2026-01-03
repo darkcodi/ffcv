@@ -77,11 +77,13 @@ pub fn parse_prefs_js(content: &str) -> Result<HashMap<String, serde_json::Value
 /// "#;
 ///
 /// let prefs = parse_prefs_js_with_types(content)?;
-/// let homepage = &prefs["browser.startup.homepage"];
+/// let homepage = prefs.iter()
+///     .find(|e| e.key == "browser.startup.homepage")
+///     .unwrap();
 /// assert_eq!(homepage.pref_type, PrefType::User);
 /// # Ok::<(), ffcv::Error>(())
 /// ```
-pub fn parse_prefs_js_with_types(content: &str) -> Result<HashMap<String, PrefEntry>> {
+pub fn parse_prefs_js_with_types(content: &str) -> Result<Vec<PrefEntry>> {
     let mut parser = Parser::new(content);
     parser.parse_with_types()
 }
@@ -156,9 +158,9 @@ impl<'a> Parser<'a> {
         Ok(preferences)
     }
 
-    /// Parse the entire input into a HashMap of preferences with their types
-    fn parse_with_types(&mut self) -> Result<HashMap<String, PrefEntry>> {
-        let mut preferences = HashMap::new();
+    /// Parse the entire input into a Vec of preferences with their types
+    fn parse_with_types(&mut self) -> Result<Vec<PrefEntry>> {
+        let mut preferences = Vec::new();
 
         loop {
             match &self.current {
@@ -173,7 +175,11 @@ impl<'a> Parser<'a> {
                 Some(Token::Eof) => break,
                 Some(_) => {
                     let (key, value, pref_type) = self.parse_statement_with_type()?;
-                    preferences.insert(key.clone(), PrefEntry { value, pref_type });
+                    preferences.push(PrefEntry {
+                        key: key.clone(),
+                        value,
+                        pref_type,
+                    });
                 }
             }
         }
@@ -815,12 +821,14 @@ mod tests {
         let input = r#"user_pref("browser.startup.homepage", "https://example.com");"#;
         let result = parse_prefs_js_with_types(input).unwrap();
         assert_eq!(result.len(), 1);
+        let entry = result
+            .iter()
+            .find(|e| e.key == "browser.startup.homepage")
+            .unwrap();
+        assert_eq!(entry.key, "browser.startup.homepage");
+        assert_eq!(entry.pref_type, crate::types::PrefType::User);
         assert_eq!(
-            result["browser.startup.homepage"].pref_type,
-            crate::types::PrefType::User
-        );
-        assert_eq!(
-            result["browser.startup.homepage"].value,
+            entry.value,
             serde_json::Value::String("https://example.com".to_string())
         );
     }
@@ -830,14 +838,13 @@ mod tests {
         let input = r#"pref("javascript.enabled", true);"#;
         let result = parse_prefs_js_with_types(input).unwrap();
         assert_eq!(result.len(), 1);
-        assert_eq!(
-            result["javascript.enabled"].pref_type,
-            crate::types::PrefType::Default
-        );
-        assert_eq!(
-            result["javascript.enabled"].value,
-            serde_json::Value::Bool(true)
-        );
+        let entry = result
+            .iter()
+            .find(|e| e.key == "javascript.enabled")
+            .unwrap();
+        assert_eq!(entry.key, "javascript.enabled");
+        assert_eq!(entry.pref_type, crate::types::PrefType::Default);
+        assert_eq!(entry.value, serde_json::Value::Bool(true));
     }
 
     #[test]
@@ -845,11 +852,13 @@ mod tests {
         let input = r#"lock_pref("network.proxy.type", 1);"#;
         let result = parse_prefs_js_with_types(input).unwrap();
         assert_eq!(result.len(), 1);
-        assert_eq!(
-            result["network.proxy.type"].pref_type,
-            crate::types::PrefType::Locked
-        );
-        match &result["network.proxy.type"].value {
+        let entry = result
+            .iter()
+            .find(|e| e.key == "network.proxy.type")
+            .unwrap();
+        assert_eq!(entry.key, "network.proxy.type");
+        assert_eq!(entry.pref_type, crate::types::PrefType::Locked);
+        match &entry.value {
             serde_json::Value::Number(n) => {
                 assert_eq!(n.as_f64(), Some(1.0));
             }
@@ -862,12 +871,11 @@ mod tests {
         let input = r#"sticky_pref("test.pref", "sticky value");"#;
         let result = parse_prefs_js_with_types(input).unwrap();
         assert_eq!(result.len(), 1);
+        let entry = result.iter().find(|e| e.key == "test.pref").unwrap();
+        assert_eq!(entry.key, "test.pref");
+        assert_eq!(entry.pref_type, crate::types::PrefType::Sticky);
         assert_eq!(
-            result["test.pref"].pref_type,
-            crate::types::PrefType::Sticky
-        );
-        assert_eq!(
-            result["test.pref"].value,
+            entry.value,
             serde_json::Value::String("sticky value".to_string())
         );
     }
@@ -882,19 +890,22 @@ mod tests {
         "#;
         let result = parse_prefs_js_with_types(input).unwrap();
         assert_eq!(result.len(), 4);
-        assert_eq!(result["user.pref"].pref_type, crate::types::PrefType::User);
-        assert_eq!(
-            result["default.pref"].pref_type,
-            crate::types::PrefType::Default
-        );
-        assert_eq!(
-            result["locked.pref"].pref_type,
-            crate::types::PrefType::Locked
-        );
-        assert_eq!(
-            result["sticky.pref"].pref_type,
-            crate::types::PrefType::Sticky
-        );
+
+        let user_entry = result.iter().find(|e| e.key == "user.pref").unwrap();
+        assert_eq!(user_entry.key, "user.pref");
+        assert_eq!(user_entry.pref_type, crate::types::PrefType::User);
+
+        let default_entry = result.iter().find(|e| e.key == "default.pref").unwrap();
+        assert_eq!(default_entry.key, "default.pref");
+        assert_eq!(default_entry.pref_type, crate::types::PrefType::Default);
+
+        let locked_entry = result.iter().find(|e| e.key == "locked.pref").unwrap();
+        assert_eq!(locked_entry.key, "locked.pref");
+        assert_eq!(locked_entry.pref_type, crate::types::PrefType::Locked);
+
+        let sticky_entry = result.iter().find(|e| e.key == "sticky.pref").unwrap();
+        assert_eq!(sticky_entry.key, "sticky.pref");
+        assert_eq!(sticky_entry.pref_type, crate::types::PrefType::Sticky);
     }
 
     #[test]

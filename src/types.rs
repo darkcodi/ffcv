@@ -55,11 +55,15 @@ pub enum PrefType {
 ///
 /// let content = r#"user_pref("test", true);"#;
 /// let prefs = parse_prefs_js_with_types(content)?;
-/// assert_eq!(prefs["test"].pref_type, PrefType::User);
+/// let entry = prefs.iter().find(|e| e.key == "test").unwrap();
+/// assert_eq!(entry.key, "test");
+/// assert_eq!(entry.pref_type, PrefType::User);
 /// # Ok::<(), ffcv::Error>(())
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrefEntry {
+    /// The preference name/key
+    pub key: String,
     /// The preference value
     pub value: serde_json::Value,
     /// The type of preference (user, default, locked, sticky)

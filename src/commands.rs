@@ -117,30 +117,11 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
     };
 
     // Parse preferences with or without type information based on output type
-    let (preferences, preferences_with_types): (
-        Config,
-        Option<std::collections::HashMap<String, ffcv::PrefEntry>>,
-    ) = match params.output_type {
-        cli::OutputType::JsonObject => {
-            // Use standard parser for json-object (no type info needed)
-            let prefs = ffcv::parser::parse_prefs_js(&content).map_err(|e| {
-                let source_hint = if params.stdin {
-                    "from stdin"
-                } else {
-                    "from prefs.js file"
-                };
-                anyhow::anyhow!(
-                    "Failed to parse preferences {}: {}. The input may be malformed.",
-                    source_hint,
-                    e
-                )
-            })?;
-            (prefs, None)
-        }
-        cli::OutputType::JsonArray => {
-            // Use parser with type info for json-array
-            let prefs_with_types =
-                ffcv::parser::parse_prefs_js_with_types(&content).map_err(|e| {
+    let (preferences, preferences_with_types): (Config, Option<Vec<ffcv::PrefEntry>>) =
+        match params.output_type {
+            cli::OutputType::JsonObject => {
+                // Use standard parser for json-object (no type info needed)
+                let prefs = ffcv::parser::parse_prefs_js(&content).map_err(|e| {
                     let source_hint = if params.stdin {
                         "from stdin"
                     } else {
@@ -152,14 +133,31 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
                         e
                     )
                 })?;
-            // Also create Config for query filtering
-            let prefs: Config = prefs_with_types
-                .iter()
-                .map(|(k, v)| (k.clone(), v.value.clone()))
-                .collect();
-            (prefs, Some(prefs_with_types))
-        }
-    };
+                (prefs, None)
+            }
+            cli::OutputType::JsonArray => {
+                // Use parser with type info for json-array
+                let prefs_with_types =
+                    ffcv::parser::parse_prefs_js_with_types(&content).map_err(|e| {
+                        let source_hint = if params.stdin {
+                            "from stdin"
+                        } else {
+                            "from prefs.js file"
+                        };
+                        anyhow::anyhow!(
+                            "Failed to parse preferences {}: {}. The input may be malformed.",
+                            source_hint,
+                            e
+                        )
+                    })?;
+                // Also create Config for query filtering
+                let prefs: Config = prefs_with_types
+                    .iter()
+                    .map(|entry| (entry.key.clone(), entry.value.clone()))
+                    .collect();
+                (prefs, Some(prefs_with_types))
+            }
+        };
 
     // Handle --get mode: single preference retrieval with raw output
     if let Some(get_key) = params.get {
@@ -212,7 +210,8 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
                 .map(|(key, value)| {
                     // Look up the type information
                     let pref_type = prefs_with_types
-                        .get(key)
+                        .iter()
+                        .find(|e| e.key == *key)
                         .map(|entry| entry.pref_type.clone());
                     let explanation = ffcv::get_preference_explanation(key);
                     ffcv::ConfigEntry {
@@ -344,11 +343,11 @@ mod tests {
         let prefs_with_types = ffcv::parser::parse_prefs_js_with_types(input).unwrap();
         let mut array_output: Vec<ffcv::ConfigEntry> = prefs_with_types
             .iter()
-            .map(|(key, entry)| ffcv::ConfigEntry {
-                key: key.clone(),
+            .map(|entry| ffcv::ConfigEntry {
+                key: entry.key.clone(),
                 value: entry.value.clone(),
                 pref_type: Some(entry.pref_type.clone()),
-                explanation: ffcv::get_preference_explanation(key),
+                explanation: ffcv::get_preference_explanation(&entry.key),
             })
             .collect();
 
@@ -505,11 +504,11 @@ mod tests {
         let prefs_with_types = ffcv::parser::parse_prefs_js_with_types(input).unwrap();
         let array_output: Vec<ffcv::ConfigEntry> = prefs_with_types
             .iter()
-            .map(|(key, entry)| ffcv::ConfigEntry {
-                key: key.clone(),
+            .map(|entry| ffcv::ConfigEntry {
+                key: entry.key.clone(),
                 value: entry.value.clone(),
                 pref_type: Some(entry.pref_type.clone()),
-                explanation: ffcv::get_preference_explanation(key),
+                explanation: ffcv::get_preference_explanation(&entry.key),
             })
             .collect();
 
