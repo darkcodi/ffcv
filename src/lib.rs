@@ -135,7 +135,7 @@
 
 // Re-export core types at crate root for convenient access
 pub use profile::ProfileInfo;
-pub use types::{ConfigEntry, PrefEntry, PrefType};
+pub use types::{PrefEntry, PrefType};
 
 // Re-export documentation function
 pub use types::get_preference_explanation;

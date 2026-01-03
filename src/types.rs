@@ -68,44 +68,6 @@ pub struct PrefEntry {
     /// The type of preference (user, default, locked, sticky)
     pub pref_type: PrefType,
     /// Optional human-readable explanation for the preference
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub explanation: Option<&'static str>,
-}
-
-/// Representation for array output format
-///
-/// This structure is used when outputting preferences in JSON array format,
-/// providing additional metadata such as type and explanation.
-///
-/// # Fields
-///
-/// * `key` - The preference name
-/// * `value` - The preference value
-/// * `pref_type` - Optional type information (user, default, locked, sticky)
-/// * `explanation` - Optional human-readable explanation
-///
-/// # Example
-///
-/// ```rust
-/// use ffcv::ConfigEntry;
-/// use serde_json::json;
-///
-/// let entry = ConfigEntry {
-///     key: "javascript.enabled".to_string(),
-///     value: json!(true),
-///     pref_type: Some(ffcv::PrefType::Default),
-///     explanation: Some("Master switch for JavaScript".to_string()),
-/// };
-/// ```
-#[derive(Debug, Clone, Serialize)]
-pub struct ConfigEntry {
-    /// The preference name/key
-    pub key: String,
-    /// The preference value
-    pub value: serde_json::Value,
-    /// Optional type information
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pref_type: Option<PrefType>,
-    /// Optional human-readable explanation
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub explanation: Option<String>,
 }

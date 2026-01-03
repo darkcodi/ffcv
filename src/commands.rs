@@ -178,15 +178,7 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
         }
         cli::OutputType::JsonArray => {
             // Use Vec<PrefEntry> directly for array output
-            let mut sorted_entries: Vec<ffcv::ConfigEntry> = output_prefs
-                .iter()
-                .map(|entry| ffcv::ConfigEntry {
-                    key: entry.key.clone(),
-                    value: entry.value.clone(),
-                    pref_type: Some(entry.pref_type.clone()),
-                    explanation: ffcv::get_preference_explanation(&entry.key),
-                })
-                .collect();
+            let mut sorted_entries = output_prefs.clone();
 
             // Sort alphabetically by key for deterministic output order
             sorted_entries.sort_by(|a, b| a.key.cmp(&b.key));
@@ -243,12 +235,12 @@ mod tests {
     }
 
     #[test]
-    fn test_config_entry_serialization_with_pref_type() {
-        // Test that ConfigEntry serializes correctly with pref_type
-        let entry = ffcv::ConfigEntry {
+    fn test_pref_entry_serialization() {
+        // Test that PrefEntry serializes correctly
+        let entry = ffcv::PrefEntry {
             key: "test.key".to_string(),
             value: json!("test value"),
-            pref_type: Some(PrefType::User),
+            pref_type: PrefType::User,
             explanation: None,
         };
 
@@ -257,25 +249,6 @@ mod tests {
         assert!(json_str.contains("\"key\":\"test.key\""));
         assert!(json_str.contains("\"value\":\"test value\""));
         // explanation should not be present when None
-        assert!(!json_str.contains("explanation"));
-    }
-
-    #[test]
-    fn test_config_entry_serialization_without_pref_type() {
-        // Test that ConfigEntry serializes correctly without pref_type (None)
-        let entry = ffcv::ConfigEntry {
-            key: "test.key".to_string(),
-            value: json!("test value"),
-            pref_type: None,
-            explanation: None,
-        };
-
-        let json_str = serde_json::to_string(&entry).unwrap();
-        // pref_type should not be in the output when None (due to skip_serializing_if)
-        assert!(!json_str.contains("pref_type"));
-        assert!(json_str.contains("\"key\":\"test.key\""));
-        assert!(json_str.contains("\"value\":\"test value\""));
-        // explanation should also not be present when None
         assert!(!json_str.contains("explanation"));
     }
 
@@ -305,16 +278,7 @@ mod tests {
             sticky_pref("sticky.pref", "value4");
         "#;
 
-        let prefs_with_types = ffcv::parser::parse_prefs_js(input).unwrap();
-        let mut array_output: Vec<ffcv::ConfigEntry> = prefs_with_types
-            .iter()
-            .map(|entry| ffcv::ConfigEntry {
-                key: entry.key.clone(),
-                value: entry.value.clone(),
-                pref_type: Some(entry.pref_type.clone()),
-                explanation: ffcv::get_preference_explanation(&entry.key),
-            })
-            .collect();
+        let mut array_output = ffcv::parser::parse_prefs_js(input).unwrap();
 
         // Sort to match production code behavior
         array_output.sort_by(|a, b| a.key.cmp(&b.key));
@@ -427,15 +391,13 @@ mod tests {
     }
 
     #[test]
-    fn test_config_entry_serialization_with_explanation() {
-        // Test that ConfigEntry includes explanation field in JSON output
-        let entry = ffcv::ConfigEntry {
+    fn test_pref_entry_serialization_with_explanation() {
+        // Test that PrefEntry includes explanation field in JSON output
+        let entry = ffcv::PrefEntry {
             key: "javascript.enabled".to_string(),
             value: json!(true),
-            pref_type: Some(PrefType::Default),
-            explanation: Some(
-                "Master switch to enable or disable JavaScript execution.".to_string(),
-            ),
+            pref_type: PrefType::Default,
+            explanation: Some("Master switch to enable or disable JavaScript execution."),
         };
 
         let json_str = serde_json::to_string(&entry).unwrap();
@@ -444,12 +406,12 @@ mod tests {
     }
 
     #[test]
-    fn test_config_entry_serialization_without_explanation() {
-        // Test that ConfigEntry without explanation does not include the field
-        let entry = ffcv::ConfigEntry {
+    fn test_pref_entry_serialization_without_explanation() {
+        // Test that PrefEntry without explanation does not include the field
+        let entry = ffcv::PrefEntry {
             key: "unknown.pref".to_string(),
             value: json!("test"),
-            pref_type: None,
+            pref_type: PrefType::User,
             explanation: None,
         };
 
@@ -466,16 +428,10 @@ mod tests {
             user_pref("browser.startup.homepage", "https://example.com");
         "#;
 
-        let prefs_with_types = ffcv::parser::parse_prefs_js(input).unwrap();
-        let array_output: Vec<ffcv::ConfigEntry> = prefs_with_types
-            .iter()
-            .map(|entry| ffcv::ConfigEntry {
-                key: entry.key.clone(),
-                value: entry.value.clone(),
-                pref_type: Some(entry.pref_type.clone()),
-                explanation: ffcv::get_preference_explanation(&entry.key),
-            })
-            .collect();
+        let mut array_output = ffcv::parser::parse_prefs_js(input).unwrap();
+
+        // Sort to match production code behavior
+        array_output.sort_by(|a, b| a.key.cmp(&b.key));
 
         let json_str = serde_json::to_string_pretty(&array_output).unwrap();
 
