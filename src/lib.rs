@@ -35,6 +35,22 @@
 //! # Ok::<(), ffcv::Error>(())
 //! ```
 //!
+//! For convenient value type checking, import the `PrefValueExt` trait:
+//!
+//! ```rust
+//! use ffcv::{parse_prefs_js, PrefValue, PrefValueExt};
+//!
+//! let content = r#"user_pref("javascript.enabled", true);"#;
+//! let prefs = parse_prefs_js(content)?;
+//! let entry = &prefs[0];
+//!
+//! // Use convenience methods from PrefValueExt
+//! if let Some(enabled) = entry.value.as_bool() {
+//!     println!("JavaScript enabled: {}", enabled);
+//! }
+//! # Ok::<(), ffcv::Error>(())
+//! ```
+//!
 //! ### Working with Profiles
 //!
 //! ```rust
@@ -136,7 +152,7 @@ pub mod profile;
 pub mod query;
 
 // Re-export key functions at crate level for ergonomic API
-pub use parser::parse_prefs_js;
+pub use parser::{parse_prefs_js, parse_prefs_js_file};
 pub use profile::{find_profile_path, get_prefs_path, list_profiles};
 pub use query::query_preferences;
 

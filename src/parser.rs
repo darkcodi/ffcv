@@ -63,6 +63,14 @@ pub fn parse_prefs_js(content: &str) -> Result<Vec<PrefEntry>> {
     parser.parse()
 }
 
+/// Parse a prefs.js file directly from a file path
+///
+/// This is a convenience function that reads the file and parses it in one step.
+pub fn parse_prefs_js_file(path: &std::path::Path) -> Result<Vec<PrefEntry>> {
+    let content = std::fs::read_to_string(path)?;
+    parse_prefs_js(&content)
+}
+
 /// Parser for Firefox preference files
 struct Parser<'a> {
     lexer: Lexer<'a>,

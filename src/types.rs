@@ -4,6 +4,7 @@
 //! for representing Firefox preferences and their metadata.
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Firefox preference value types
 ///
@@ -52,10 +53,29 @@ impl PrefValue {
     }
 }
 
+impl fmt::Display for PrefValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PrefValue::Bool(b) => write!(f, "{}", b),
+            PrefValue::Integer(i) => write!(f, "{}", i),
+            PrefValue::Float(float) => write!(f, "{}", float),
+            PrefValue::String(s) => write!(f, "\"{}\"", s),
+            PrefValue::Null => write!(f, "null"),
+        }
+    }
+}
+
 /// Extension trait providing convenience methods for PrefValue
 ///
 /// This trait provides ergonomic accessor methods for working with
 /// preference values without pattern matching.
+///
+/// **Note:** To use this trait's methods, you must import both `PrefValue`
+/// and `PrefValueExt`:
+///
+/// ```rust
+/// use ffcv::{PrefValue, PrefValueExt};
+/// ```
 ///
 /// # Example
 ///
@@ -221,4 +241,37 @@ pub struct PrefEntry {
     /// Optional human-readable explanation for the preference
     #[serde(skip_serializing_if = "Option::is_none")]
     pub explanation: Option<&'static str>,
+}
+
+impl PrefEntry {
+    /// Find the first preference entry matching the given key
+    ///
+    /// This is a convenience method for finding preferences by key without
+    /// manually iterating through the slice.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use ffcv::{parse_prefs_js, PrefEntry};
+    ///
+    /// let content = r#"
+    ///     user_pref("browser.startup.homepage", "https://example.com");
+    ///     user_pref("javascript.enabled", true);
+    /// "#;
+    /// let prefs = parse_prefs_js(content)?;
+    ///
+    /// if let Some(entry) = PrefEntry::find_by_key(&prefs, "browser.startup.homepage") {
+    ///     println!("Found homepage: {:?}", entry.value);
+    /// }
+    /// # Ok::<(), ffcv::Error>(())
+    /// ```
+    pub fn find_by_key<'a>(prefs: &'a [PrefEntry], key: &str) -> Option<&'a PrefEntry> {
+        prefs.iter().find(|e| e.key == key)
+    }
+}
+
+impl fmt::Display for PrefEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}({:?}) = {}", self.key, self.pref_type, self.value)
+    }
 }
