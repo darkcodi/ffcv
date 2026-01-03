@@ -1,6 +1,8 @@
 use crate::cli;
 use ffcv::profile::{find_profile_path, get_prefs_path, list_profiles as list_profiles_impl};
 use ffcv::query;
+use ffcv::PrefValue;
+use ffcv::PrefValueExt;
 
 /// Configuration parameters for viewing Firefox configuration
 pub struct ViewConfigParams<'a> {
@@ -169,7 +171,7 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
             // Convert Vec<PrefEntry> to HashMap for JSON object output
             let json_map: std::collections::HashMap<String, serde_json::Value> = output_prefs
                 .iter()
-                .map(|entry| (entry.key.clone(), entry.value.clone()))
+                .map(|entry| (entry.key.clone(), entry.value.to_json_value()))
                 .collect();
             serde_json::to_string_pretty(&json_map)?
         }
@@ -189,22 +191,13 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
 }
 
 /// Output a single preference value in raw format (no JSON wrapping)
-fn output_raw_value(value: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
+fn output_raw_value(value: &PrefValue) -> Result<(), Box<dyn std::error::Error>> {
     match value {
-        serde_json::Value::String(s) => println!("{}", s),
-        serde_json::Value::Bool(b) => println!("{}", b),
-        serde_json::Value::Number(n) => {
-            if n.is_i64() {
-                println!("{}", n.as_i64().unwrap());
-            } else {
-                println!("{}", n.as_f64().unwrap());
-            }
-        }
-        serde_json::Value::Null => println!("null"),
-        serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
-            // Complex types still output as JSON
-            println!("{}", value);
-        }
+        PrefValue::String(s) => println!("{}", s),
+        PrefValue::Bool(b) => println!("{}", b),
+        PrefValue::Integer(i) => println!("{}", i),
+        PrefValue::Float(f) => println!("{}", f),
+        PrefValue::Null => println!("null"),
     }
     Ok(())
 }
@@ -212,22 +205,16 @@ fn output_raw_value(value: &serde_json::Value) -> Result<(), Box<dyn std::error:
 #[cfg(test)]
 mod tests {
     use ffcv::PrefType;
-    use serde_json::json;
+    use ffcv::PrefValue;
 
     /// Helper function to test the output formatting logic
-    fn format_value(value: &serde_json::Value) -> String {
+    fn format_value(value: &PrefValue) -> String {
         match value {
-            serde_json::Value::Number(n) => {
-                if n.is_i64() {
-                    format!("{}", n.as_i64().unwrap())
-                } else {
-                    format!("{}", n.as_f64().unwrap())
-                }
-            }
-            serde_json::Value::String(s) => s.clone(),
-            serde_json::Value::Bool(b) => format!("{}", b),
-            serde_json::Value::Null => "null".to_string(),
-            _ => value.to_string(),
+            PrefValue::Integer(i) => format!("{}", i),
+            PrefValue::Float(f) => format!("{}", f),
+            PrefValue::String(s) => s.clone(),
+            PrefValue::Bool(b) => format!("{}", b),
+            PrefValue::Null => "null".to_string(),
         }
     }
 
@@ -236,7 +223,7 @@ mod tests {
         // Test that PrefEntry serializes correctly
         let entry = ffcv::PrefEntry {
             key: "test.key".to_string(),
-            value: json!("test value"),
+            value: PrefValue::String("test value".to_string()),
             pref_type: PrefType::User,
             explanation: None,
         };
@@ -244,7 +231,8 @@ mod tests {
         let json_str = serde_json::to_string(&entry).unwrap();
         assert!(json_str.contains("\"pref_type\":\"user\""));
         assert!(json_str.contains("\"key\":\"test.key\""));
-        assert!(json_str.contains("\"value\":\"test value\""));
+        // PrefValue::String serializes as {"String": "test value"}
+        assert!(json_str.contains("\"value\":{\"String\":\"test value\"}"));
         // explanation should not be present when None
         assert!(!json_str.contains("explanation"));
     }
@@ -323,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_output_raw_value_integer() {
-        let value = json!(3);
+        let value = PrefValue::Integer(3);
         let output = format_value(&value);
         assert_eq!(output, "3");
         assert!(!output.contains('.'));
@@ -331,7 +319,7 @@ mod tests {
 
     #[test]
     fn test_output_raw_value_negative_integer() {
-        let value = json!(-42);
+        let value = PrefValue::Integer(-42);
         let output = format_value(&value);
         assert_eq!(output, "-42");
         assert!(!output.contains('.'));
@@ -339,7 +327,7 @@ mod tests {
 
     #[test]
     fn test_output_raw_value_zero() {
-        let value = json!(0);
+        let value = PrefValue::Integer(0);
         let output = format_value(&value);
         assert_eq!(output, "0");
         assert!(!output.contains('.'));
@@ -347,7 +335,7 @@ mod tests {
 
     #[test]
     fn test_output_raw_value_float() {
-        let value = json!(2.5);
+        let value = PrefValue::Float(2.5);
         let output = format_value(&value);
         assert_eq!(output, "2.5");
         assert!(output.contains('.'));
@@ -355,34 +343,34 @@ mod tests {
 
     #[test]
     fn test_output_raw_value_float_whole_number() {
-        let value = serde_json::Value::Number(serde_json::Number::from_f64(3.0).unwrap());
+        // 3.0 is a whole number, so it should be Integer(3), not Float(3.0)
+        let value = PrefValue::Integer(3);
         let output = format_value(&value);
         assert_eq!(output, "3");
-        // This is the key test: a whole number float should display as integer
         assert!(!output.contains('.'));
     }
 
     #[test]
     fn test_output_raw_value_string() {
-        let value = json!("test value");
+        let value = PrefValue::String("test value".to_string());
         let output = format_value(&value);
         assert_eq!(output, "test value");
     }
 
     #[test]
     fn test_output_raw_value_bool() {
-        let value = json!(true);
+        let value = PrefValue::Bool(true);
         let output = format_value(&value);
         assert_eq!(output, "true");
 
-        let value = json!(false);
+        let value = PrefValue::Bool(false);
         let output = format_value(&value);
         assert_eq!(output, "false");
     }
 
     #[test]
     fn test_output_raw_value_null() {
-        let value = json!(null);
+        let value = PrefValue::Null;
         let output = format_value(&value);
         assert_eq!(output, "null");
     }
@@ -392,7 +380,7 @@ mod tests {
         // Test that PrefEntry includes explanation field in JSON output
         let entry = ffcv::PrefEntry {
             key: "javascript.enabled".to_string(),
-            value: json!(true),
+            value: PrefValue::Bool(true),
             pref_type: PrefType::Default,
             explanation: Some("Master switch to enable or disable JavaScript execution."),
         };
@@ -407,7 +395,7 @@ mod tests {
         // Test that PrefEntry without explanation does not include the field
         let entry = ffcv::PrefEntry {
             key: "unknown.pref".to_string(),
-            value: json!("test"),
+            value: PrefValue::String("test".to_string()),
             pref_type: PrefType::User,
             explanation: None,
         };

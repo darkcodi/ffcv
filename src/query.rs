@@ -36,19 +36,18 @@ use glob::Pattern;
 /// # Example
 ///
 /// ```rust
-/// use ffcv::{query_preferences, PrefEntry, PrefType};
-/// use serde_json::json;
+/// use ffcv::{query_preferences, PrefEntry, PrefType, PrefValue};
 ///
 /// let prefs = vec![
 ///     PrefEntry {
 ///         key: "network.proxy.http".to_string(),
-///         value: json!("proxy.example.com"),
+///         value: PrefValue::String("proxy.example.com".to_string()),
 ///         pref_type: PrefType::User,
 ///         explanation: None,
 ///     },
 ///     PrefEntry {
 ///         key: "browser.startup.homepage".to_string(),
-///         value: json!("https://example.com"),
+///         value: PrefValue::String("https://example.com".to_string()),
 ///         pref_type: PrefType::User,
 ///         explanation: None,
 ///     },
@@ -86,38 +85,37 @@ pub fn query_preferences(preferences: &[PrefEntry], patterns: &[&str]) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::PrefType;
-    use serde_json::Value;
+    use crate::types::{PrefType, PrefValue};
 
     fn create_test_config() -> Vec<PrefEntry> {
         vec![
             PrefEntry {
                 key: "network.proxy.type".to_string(),
-                value: Value::Number(1.into()),
+                value: PrefValue::Integer(1),
                 pref_type: PrefType::User,
                 explanation: None,
             },
             PrefEntry {
                 key: "network.cookie.cookieBehavior".to_string(),
-                value: Value::Number(0.into()),
+                value: PrefValue::Integer(0),
                 pref_type: PrefType::User,
                 explanation: None,
             },
             PrefEntry {
                 key: "browser.startup.homepage".to_string(),
-                value: Value::String("https://example.com".to_string()),
+                value: PrefValue::String("https://example.com".to_string()),
                 pref_type: PrefType::User,
                 explanation: None,
             },
             PrefEntry {
                 key: "browser.search.region".to_string(),
-                value: Value::String("US".to_string()),
+                value: PrefValue::String("US".to_string()),
                 pref_type: PrefType::User,
                 explanation: None,
             },
             PrefEntry {
                 key: "javascript.enabled".to_string(),
-                value: Value::Bool(true),
+                value: PrefValue::Bool(true),
                 pref_type: PrefType::Default,
                 explanation: None,
             },

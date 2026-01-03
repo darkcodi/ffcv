@@ -18,7 +18,7 @@
 //! ### Parsing Preferences
 //!
 //! ```rust
-//! use ffcv::{parse_prefs_js, PrefType};
+//! use ffcv::{parse_prefs_js, PrefType, PrefValue};
 //!
 //! let content = r#"
 //!     user_pref("browser.startup.homepage", "https://example.com");
@@ -30,7 +30,7 @@
 //! let homepage = prefs.iter()
 //!     .find(|e| e.key == "browser.startup.homepage")
 //!     .unwrap();
-//! assert_eq!(homepage.value, "https://example.com");
+//! assert_eq!(homepage.value, PrefValue::String("https://example.com".to_string()));
 //! assert_eq!(homepage.pref_type, PrefType::User);
 //! # Ok::<(), ffcv::Error>(())
 //! ```
@@ -125,7 +125,7 @@
 
 // Re-export core types at crate root for convenient access
 pub use profile::ProfileInfo;
-pub use types::{PrefEntry, PrefType};
+pub use types::{PrefEntry, PrefType, PrefValue, PrefValueExt};
 
 // Re-export error types
 pub use error::{Error, Result};

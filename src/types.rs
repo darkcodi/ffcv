@@ -5,6 +5,159 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Firefox preference value types
+///
+/// Firefox preferences only support a limited set of primitive types.
+/// Complex data structures (arrays, objects) are stored as JSON strings,
+/// not as native types.
+///
+/// # Example
+///
+/// ```rust
+/// use ffcv::{PrefValue, PrefValueExt};
+///
+/// let bool_val = PrefValue::Bool(true);
+/// let int_val = PrefValue::Integer(42);
+/// let string_val = PrefValue::String("example".to_string());
+///
+/// assert_eq!(bool_val.as_bool(), Some(true));
+/// assert_eq!(int_val.as_i64(), Some(42));
+/// assert_eq!(string_val.as_str(), Some("example"));
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum PrefValue {
+    /// Boolean value (true/false)
+    Bool(bool),
+    /// Integer value (64-bit for safety, though Firefox uses 32-bit)
+    Integer(i64),
+    /// Floating-point value
+    Float(f64),
+    /// String value (including JSON-encoded complex data)
+    String(String),
+    /// Null value
+    Null,
+}
+
+impl PrefValue {
+    /// Convert f64 to Integer or Float variant
+    ///
+    /// Whole numbers without fractional parts become Integer(i64),
+    /// numbers with fractional parts become Float(f64).
+    pub fn from_f64(num: f64) -> Self {
+        if num.fract() == 0.0 && num >= i64::MIN as f64 && num <= i64::MAX as f64 {
+            PrefValue::Integer(num as i64)
+        } else {
+            PrefValue::Float(num)
+        }
+    }
+}
+
+/// Extension trait providing convenience methods for PrefValue
+///
+/// This trait provides ergonomic accessor methods for working with
+/// preference values without pattern matching.
+///
+/// # Example
+///
+/// ```rust
+/// use ffcv::{PrefValue, PrefValueExt};
+///
+/// let value = PrefValue::String("test".to_string());
+///
+/// if let Some(s) = value.as_str() {
+///     println!("String value: {}", s);
+/// }
+///
+/// assert_eq!(value.type_name(), "String");
+/// assert!(!value.is_null());
+/// ```
+pub trait PrefValueExt {
+    /// Returns the value as a bool if it is a Bool variant
+    fn as_bool(&self) -> Option<bool>;
+
+    /// Returns the value as an i64 if it is an Integer variant
+    fn as_i64(&self) -> Option<i64>;
+
+    /// Returns the value as an f64 if it is an Integer or Float variant
+    fn as_f64(&self) -> Option<f64>;
+
+    /// Returns the value as a string slice if it is a String variant
+    fn as_str(&self) -> Option<&str>;
+
+    /// Returns true if the value is Null
+    fn is_null(&self) -> bool;
+
+    /// Returns true if the value is an Integer or Float
+    fn is_number(&self) -> bool;
+
+    /// Returns the type name as a static string
+    fn type_name(&self) -> &'static str;
+
+    /// Converts PrefValue to serde_json::Value for compatibility
+    fn to_json_value(&self) -> serde_json::Value;
+}
+
+impl PrefValueExt for PrefValue {
+    fn as_bool(&self) -> Option<bool> {
+        match self {
+            PrefValue::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
+
+    fn as_i64(&self) -> Option<i64> {
+        match self {
+            PrefValue::Integer(i) => Some(*i),
+            _ => None,
+        }
+    }
+
+    fn as_f64(&self) -> Option<f64> {
+        match self {
+            PrefValue::Integer(i) => Some(*i as f64),
+            PrefValue::Float(f) => Some(*f),
+            _ => None,
+        }
+    }
+
+    fn as_str(&self) -> Option<&str> {
+        match self {
+            PrefValue::String(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    fn is_null(&self) -> bool {
+        matches!(self, PrefValue::Null)
+    }
+
+    fn is_number(&self) -> bool {
+        matches!(self, PrefValue::Integer(_) | PrefValue::Float(_))
+    }
+
+    fn type_name(&self) -> &'static str {
+        match self {
+            PrefValue::Bool(_) => "Bool",
+            PrefValue::Integer(_) => "Integer",
+            PrefValue::Float(_) => "Float",
+            PrefValue::String(_) => "String",
+            PrefValue::Null => "Null",
+        }
+    }
+
+    fn to_json_value(&self) -> serde_json::Value {
+        match self {
+            PrefValue::Bool(b) => serde_json::Value::Bool(*b),
+            PrefValue::Integer(i) => serde_json::Value::Number(serde_json::Number::from(*i)),
+            PrefValue::Float(f) => serde_json::Value::Number(
+                serde_json::Number::from_f64(*f).unwrap_or_else(|| serde_json::Number::from(0)),
+            ),
+            PrefValue::String(s) => serde_json::Value::String(s.clone()),
+            PrefValue::Null => serde_json::Value::Null,
+        }
+    }
+}
+
 /// Firefox preference types
 ///
 /// Firefox supports four different preference types, indicated by which
@@ -47,13 +200,14 @@ pub enum PrefType {
 /// # Example
 ///
 /// ```rust
-/// use ffcv::{parse_prefs_js, PrefType};
+/// use ffcv::{parse_prefs_js, PrefType, PrefValue};
 ///
 /// let content = r#"user_pref("test", true);"#;
 /// let prefs = parse_prefs_js(content)?;
 /// let entry = prefs.iter().find(|e| e.key == "test").unwrap();
 /// assert_eq!(entry.key, "test");
 /// assert_eq!(entry.pref_type, PrefType::User);
+/// assert_eq!(entry.value, PrefValue::Bool(true));
 /// # Ok::<(), ffcv::Error>(())
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,7 +215,7 @@ pub struct PrefEntry {
     /// The preference name/key
     pub key: String,
     /// The preference value
-    pub value: serde_json::Value,
+    pub value: PrefValue,
     /// The type of preference (user, default, locked, sticky)
     pub pref_type: PrefType,
     /// Optional human-readable explanation for the preference

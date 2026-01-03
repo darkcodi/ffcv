@@ -17,7 +17,7 @@
 //! # Example
 //!
 //! ```rust
-//! use ffcv::{parse_prefs_js, PrefType};
+//! use ffcv::{parse_prefs_js, PrefType, PrefValue};
 //!
 //! let content = r#"
 //!     // This is a comment
@@ -28,14 +28,14 @@
 //!
 //! let prefs = parse_prefs_js(content)?;
 //! let homepage = prefs.iter().find(|e| e.key == "browser.startup.homepage").unwrap();
-//! assert_eq!(homepage.value, "https://example.com");
+//! assert_eq!(homepage.value, PrefValue::String("https://example.com".to_string()));
 //! assert_eq!(homepage.pref_type, PrefType::User);
 //! # Ok::<(), ffcv::Error>(())
 //! ```
 
 use crate::error::{Error, Result};
 use crate::lexer::{Lexer, Token};
-use crate::types::{PrefEntry, PrefType};
+use crate::types::{PrefEntry, PrefType, PrefValue};
 
 /// Parse the prefs.js file and extract all preferences
 ///
@@ -45,7 +45,7 @@ use crate::types::{PrefEntry, PrefType};
 /// # Example
 ///
 /// ```rust
-/// use ffcv::{parse_prefs_js, PrefEntry, PrefType};
+/// use ffcv::{parse_prefs_js, PrefEntry, PrefType, PrefValue};
 ///
 /// let content = r#"
 ///     user_pref("browser.startup.homepage", "https://example.com");
@@ -54,7 +54,7 @@ use crate::types::{PrefEntry, PrefType};
 ///
 /// let prefs = parse_prefs_js(content)?;
 /// let homepage = prefs.iter().find(|e| e.key == "browser.startup.homepage").unwrap();
-/// assert_eq!(homepage.value, "https://example.com");
+/// assert_eq!(homepage.value, PrefValue::String("https://example.com".to_string()));
 /// assert_eq!(homepage.pref_type, PrefType::User);
 /// # Ok::<(), ffcv::Error>(())
 /// ```
@@ -140,7 +140,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a single statement with type information: pref_type "(" key "," value ")" ";"
-    fn parse_statement_with_type(&mut self) -> Result<(String, serde_json::Value, PrefType)> {
+    fn parse_statement_with_type(&mut self) -> Result<(String, PrefValue, PrefType)> {
         // Parse and capture the pref function name (user_pref, pref, lock_pref, sticky_pref)
         let pref_type = self.parse_pref_type_identifier()?;
 
@@ -201,33 +201,24 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a value (string, number, boolean, null)
-    fn parse_value(&mut self) -> Result<serde_json::Value> {
+    fn parse_value(&mut self) -> Result<PrefValue> {
         match &self.current {
             Some(Token::String(_)) => {
                 let token = std::mem::take(&mut self.current);
                 self.advance();
                 match token {
-                    Some(Token::String(s)) => Ok(serde_json::Value::String(s)),
+                    Some(Token::String(s)) => Ok(PrefValue::String(s)),
                     _ => unreachable!(),
                 }
             }
             Some(Token::Number(n)) => {
                 let num_value = *n;
-                if let Some(num) = serde_json::Number::from_f64(num_value) {
-                    let result = serde_json::Value::Number(num);
-                    self.current.take();
-                    self.advance();
-                    Ok(result)
-                } else {
-                    Err(Error::Parser {
-                        line: self.current_line,
-                        column: self.current_column,
-                        message: format!("Invalid number {}", num_value),
-                    })
-                }
+                self.current.take();
+                self.advance();
+                Ok(PrefValue::from_f64(num_value))
             }
             Some(Token::Boolean(b)) => {
-                let result = serde_json::Value::Bool(*b);
+                let result = PrefValue::Bool(*b);
                 self.current.take();
                 self.advance();
                 Ok(result)
@@ -235,7 +226,7 @@ impl<'a> Parser<'a> {
             Some(Token::Null) => {
                 self.current.take();
                 self.advance();
-                Ok(serde_json::Value::Null)
+                Ok(PrefValue::Null)
             }
             Some(token) => Err(Error::Parser {
                 line: self.current_line,
@@ -318,6 +309,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::PrefValueExt;
 
     #[test]
     fn test_parse_prefs_js_string() {
@@ -330,7 +322,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             entry.value,
-            serde_json::Value::String("https://example.com".to_string())
+            PrefValue::String("https://example.com".to_string())
         );
         assert_eq!(entry.pref_type, PrefType::User);
     }
@@ -344,7 +336,7 @@ mod tests {
             .iter()
             .find(|e| e.key == "javascript.enabled")
             .unwrap();
-        assert_eq!(entry.value, serde_json::Value::Bool(true));
+        assert_eq!(entry.value, PrefValue::Bool(true));
         assert_eq!(entry.pref_type, PrefType::User);
     }
 
@@ -359,8 +351,8 @@ mod tests {
             .unwrap();
         // Check that the value is a number and equals 0
         match &entry.value {
-            serde_json::Value::Number(n) => {
-                assert_eq!(n.as_f64(), Some(0.0));
+            PrefValue::Integer(n) => {
+                assert_eq!(*n, 0.0 as i64);
             }
             _ => panic!("Expected number"),
         }
@@ -398,7 +390,7 @@ mod tests {
         let entry = result.iter().find(|e| e.key == "test").unwrap();
         assert_eq!(
             entry.value,
-            serde_json::Value::String("value with \"quotes\"".to_string())
+            PrefValue::String("value with \"quotes\"".to_string())
         );
         assert_eq!(entry.pref_type, PrefType::User);
     }
@@ -419,7 +411,7 @@ mod tests {
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
         let entry = result.iter().find(|e| e.key == "test").unwrap();
-        assert_eq!(entry.value, serde_json::Value::Null);
+        assert_eq!(entry.value, PrefValue::Null);
         assert_eq!(entry.pref_type, PrefType::User);
     }
 
@@ -436,7 +428,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             entry.value,
-            serde_json::Value::String("https://example.com".to_string())
+            PrefValue::String("https://example.com".to_string())
         );
         assert_eq!(entry.pref_type, PrefType::Default);
     }
@@ -450,7 +442,7 @@ mod tests {
             .iter()
             .find(|e| e.key == "javascript.enabled")
             .unwrap();
-        assert_eq!(entry.value, serde_json::Value::Bool(false));
+        assert_eq!(entry.value, PrefValue::Bool(false));
         assert_eq!(entry.pref_type, PrefType::Locked);
     }
 
@@ -465,8 +457,8 @@ mod tests {
             .unwrap();
         // Check that the value is a number and equals 1
         match &entry.value {
-            serde_json::Value::Number(n) => {
-                assert_eq!(n.as_f64(), Some(1.0));
+            PrefValue::Integer(n) => {
+                assert_eq!(*n, 1.0 as i64);
             }
             _ => panic!("Expected number"),
         }
@@ -481,7 +473,7 @@ mod tests {
         let entry = result.iter().find(|e| e.key == "complex.url").unwrap();
         assert_eq!(
             entry.value,
-            serde_json::Value::String("http://example.com?foo=bar,baz".to_string())
+            PrefValue::String("http://example.com?foo=bar,baz".to_string())
         );
         assert_eq!(entry.pref_type, PrefType::User);
     }
@@ -494,7 +486,7 @@ mod tests {
         let entry = result.iter().find(|e| e.key == "test.id").unwrap();
         assert_eq!(
             entry.value,
-            serde_json::Value::String("c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0".to_string())
+            PrefValue::String("c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0".to_string())
         );
         assert_eq!(entry.pref_type, PrefType::User);
     }
@@ -506,7 +498,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(
             result.iter().find(|e| e.key == "test").unwrap().value,
-            serde_json::Value::String("{\"key\":\"value\"}".to_string())
+            PrefValue::String("{\"key\":\"value\"}".to_string())
         );
     }
 
@@ -517,7 +509,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(
             result.iter().find(|e| e.key == "test").unwrap().value,
-            serde_json::Value::String("[1,2,3]".to_string())
+            PrefValue::String("[1,2,3]".to_string())
         );
     }
 
@@ -529,7 +521,7 @@ mod tests {
         // Note: lexer processes the escapes, so we get single backslashes
         assert_eq!(
             result.iter().find(|e| e.key == "test").unwrap().value,
-            serde_json::Value::String("C:\\path\\to\\file".to_string())
+            PrefValue::String("C:\\path\\to\\file".to_string())
         );
     }
 
@@ -540,7 +532,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(
             result.iter().find(|e| e.key == "test").unwrap().value,
-            serde_json::Value::String("A".to_string())
+            PrefValue::String("A".to_string())
         );
     }
 
@@ -551,7 +543,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(
             result.iter().find(|e| e.key == "test").unwrap().value,
-            serde_json::Value::String("A".to_string())
+            PrefValue::String("A".to_string())
         );
     }
 
@@ -562,7 +554,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(
             result.iter().find(|e| e.key == "test").unwrap().value,
-            serde_json::Value::String("line1\nline2\ttab".to_string())
+            PrefValue::String("line1\nline2\ttab".to_string())
         );
     }
 
@@ -573,8 +565,8 @@ mod tests {
         assert_eq!(result.len(), 1);
         // Check that the value is a number and equals -42
         match &result.iter().find(|e| e.key == "test").unwrap().value {
-            serde_json::Value::Number(n) => {
-                assert_eq!(n.as_f64(), Some(-42.0));
+            PrefValue::Integer(n) => {
+                assert_eq!(*n, -42.0 as i64);
             }
             _ => panic!("Expected number"),
         }
@@ -675,7 +667,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(
             result.iter().find(|e| e.key == "test").unwrap().value,
-            serde_json::Value::String("value".to_string())
+            PrefValue::String("value".to_string())
         );
     }
 
@@ -722,7 +714,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             entry.value,
-            serde_json::Value::String("{\"command\":\"\",\"panelOpen\":false}".to_string())
+            PrefValue::String("{\"command\":\"\",\"panelOpen\":false}".to_string())
         );
         assert_eq!(entry.pref_type, PrefType::User);
     }
@@ -739,7 +731,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             entry.value,
-            serde_json::Value::String("{\"ids\":[\"bookmark\"]}".to_string())
+            PrefValue::String("{\"ids\":[\"bookmark\"]}".to_string())
         );
         assert_eq!(entry.pref_type, PrefType::User);
     }
@@ -755,7 +747,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             entry.value,
-            serde_json::Value::String("c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0".to_string())
+            PrefValue::String("c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0".to_string())
         );
         assert_eq!(entry.pref_type, PrefType::User);
     }
@@ -767,7 +759,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(
             result.iter().find(|e| e.key == "test").unwrap().value,
-            serde_json::Value::String("value\x08with\x08backspace".to_string())
+            PrefValue::String("value\x08with\x08backspace".to_string())
         );
     }
 
@@ -778,7 +770,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(
             result.iter().find(|e| e.key == "test").unwrap().value,
-            serde_json::Value::String("value\x0cform\x0cfeed".to_string())
+            PrefValue::String("value\x0cform\x0cfeed".to_string())
         );
     }
 
@@ -789,7 +781,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(
             result.iter().find(|e| e.key == "test").unwrap().value,
-            serde_json::Value::String("null\x00character".to_string())
+            PrefValue::String("null\x00character".to_string())
         );
     }
 
@@ -800,7 +792,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(
             result.iter().find(|e| e.key == "test").unwrap().value,
-            serde_json::Value::String("\x08\x0c\x00".to_string())
+            PrefValue::String("\x08\x0c\x00".to_string())
         );
     }
 
@@ -826,7 +818,7 @@ mod tests {
         assert_eq!(entry.pref_type, crate::types::PrefType::User);
         assert_eq!(
             entry.value,
-            serde_json::Value::String("https://example.com".to_string())
+            PrefValue::String("https://example.com".to_string())
         );
     }
 
@@ -841,7 +833,7 @@ mod tests {
             .unwrap();
         assert_eq!(entry.key, "javascript.enabled");
         assert_eq!(entry.pref_type, crate::types::PrefType::Default);
-        assert_eq!(entry.value, serde_json::Value::Bool(true));
+        assert_eq!(entry.value, PrefValue::Bool(true));
     }
 
     #[test]
@@ -856,8 +848,8 @@ mod tests {
         assert_eq!(entry.key, "network.proxy.type");
         assert_eq!(entry.pref_type, crate::types::PrefType::Locked);
         match &entry.value {
-            serde_json::Value::Number(n) => {
-                assert_eq!(n.as_f64(), Some(1.0));
+            PrefValue::Integer(n) => {
+                assert_eq!(*n, 1.0 as i64);
             }
             _ => panic!("Expected number"),
         }
@@ -871,10 +863,7 @@ mod tests {
         let entry = result.iter().find(|e| e.key == "test.pref").unwrap();
         assert_eq!(entry.key, "test.pref");
         assert_eq!(entry.pref_type, crate::types::PrefType::Sticky);
-        assert_eq!(
-            entry.value,
-            serde_json::Value::String("sticky value".to_string())
-        );
+        assert_eq!(entry.value, PrefValue::String("sticky value".to_string()));
     }
 
     #[test]
