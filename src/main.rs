@@ -1,11 +1,5 @@
 mod cli;
 mod commands;
-mod explanations;
-mod lexer;
-mod parser;
-mod profile;
-mod query;
-mod types;
 
 use clap::Parser;
 use cli::Cli;

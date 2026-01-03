@@ -1,7 +1,7 @@
 use crate::cli;
-use crate::profile::{find_profile_path, get_prefs_path, list_profiles as list_profiles_impl};
-use crate::query;
-use crate::types::Config;
+use ffcv::profile::{find_profile_path, get_prefs_path, list_profiles as list_profiles_impl};
+use ffcv::query;
+use ffcv::Config;
 
 /// Configuration parameters for viewing Firefox configuration
 pub struct ViewConfigParams<'a> {
@@ -119,11 +119,11 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
     // Parse preferences with or without type information based on output type
     let (preferences, preferences_with_types): (
         Config,
-        Option<std::collections::HashMap<String, crate::types::PrefEntry>>,
+        Option<std::collections::HashMap<String, ffcv::PrefEntry>>,
     ) = match params.output_type {
         cli::OutputType::JsonObject => {
             // Use standard parser for json-object (no type info needed)
-            let prefs = crate::parser::parse_prefs_js(&content).map_err(|e| {
+            let prefs = ffcv::parser::parse_prefs_js(&content).map_err(|e| {
                 let source_hint = if params.stdin {
                     "from stdin"
                 } else {
@@ -140,7 +140,7 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
         cli::OutputType::JsonArray => {
             // Use parser with type info for json-array
             let prefs_with_types =
-                crate::parser::parse_prefs_js_with_types(&content).map_err(|e| {
+                ffcv::parser::parse_prefs_js_with_types(&content).map_err(|e| {
                     let source_hint = if params.stdin {
                         "from stdin"
                     } else {
@@ -166,7 +166,7 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
         if let Some(value) = preferences.get(&get_key) {
             // Check unexplained-only flag
             if params.unexplained_only {
-                let has_explanation = crate::types::get_preference_explanation(&get_key).is_some();
+                let has_explanation = ffcv::get_preference_explanation(&get_key).is_some();
                 if has_explanation {
                     return Err(anyhow::anyhow!(
                         "Preference '{}' has an explanation, but --unexplained-only was specified",
@@ -194,7 +194,7 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
     if params.unexplained_only {
         output_config.retain(|key, _| {
             // Keep only preferences that don't have explanations
-            crate::types::get_preference_explanation(key).is_none()
+            ffcv::get_preference_explanation(key).is_none()
         });
     }
 
@@ -207,15 +207,15 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
                 .expect("Type info should be available for json-array");
 
             // Collect and sort entries for deterministic output
-            let mut sorted_entries: Vec<crate::types::ConfigEntry> = output_config
+            let mut sorted_entries: Vec<ffcv::ConfigEntry> = output_config
                 .iter()
                 .map(|(key, value)| {
                     // Look up the type information
                     let pref_type = prefs_with_types
                         .get(key)
                         .map(|entry| entry.pref_type.clone());
-                    let explanation = crate::types::get_preference_explanation(key);
-                    crate::types::ConfigEntry {
+                    let explanation = ffcv::get_preference_explanation(key);
+                    ffcv::ConfigEntry {
                         key: key.clone(),
                         value: value.clone(),
                         pref_type,
@@ -258,7 +258,7 @@ fn output_raw_value(value: &serde_json::Value) -> Result<(), Box<dyn std::error:
 
 #[cfg(test)]
 mod tests {
-    use crate::types::PrefType;
+    use ffcv::PrefType;
     use serde_json::json;
 
     /// Helper function to test the output formatting logic
@@ -281,7 +281,7 @@ mod tests {
     #[test]
     fn test_config_entry_serialization_with_pref_type() {
         // Test that ConfigEntry serializes correctly with pref_type
-        let entry = crate::types::ConfigEntry {
+        let entry = ffcv::ConfigEntry {
             key: "test.key".to_string(),
             value: json!("test value"),
             pref_type: Some(PrefType::User),
@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn test_config_entry_serialization_without_pref_type() {
         // Test that ConfigEntry serializes correctly without pref_type (None)
-        let entry = crate::types::ConfigEntry {
+        let entry = ffcv::ConfigEntry {
             key: "test.key".to_string(),
             value: json!("test value"),
             pref_type: None,
@@ -341,14 +341,14 @@ mod tests {
             sticky_pref("sticky.pref", "value4");
         "#;
 
-        let prefs_with_types = crate::parser::parse_prefs_js_with_types(input).unwrap();
-        let mut array_output: Vec<crate::types::ConfigEntry> = prefs_with_types
+        let prefs_with_types = ffcv::parser::parse_prefs_js_with_types(input).unwrap();
+        let mut array_output: Vec<ffcv::ConfigEntry> = prefs_with_types
             .iter()
-            .map(|(key, entry)| crate::types::ConfigEntry {
+            .map(|(key, entry)| ffcv::ConfigEntry {
                 key: key.clone(),
                 value: entry.value.clone(),
                 pref_type: Some(entry.pref_type.clone()),
-                explanation: crate::types::get_preference_explanation(key),
+                explanation: ffcv::get_preference_explanation(key),
             })
             .collect();
 
@@ -465,7 +465,7 @@ mod tests {
     #[test]
     fn test_config_entry_serialization_with_explanation() {
         // Test that ConfigEntry includes explanation field in JSON output
-        let entry = crate::types::ConfigEntry {
+        let entry = ffcv::ConfigEntry {
             key: "javascript.enabled".to_string(),
             value: json!(true),
             pref_type: Some(PrefType::Default),
@@ -482,7 +482,7 @@ mod tests {
     #[test]
     fn test_config_entry_serialization_without_explanation() {
         // Test that ConfigEntry without explanation does not include the field
-        let entry = crate::types::ConfigEntry {
+        let entry = ffcv::ConfigEntry {
             key: "unknown.pref".to_string(),
             value: json!("test"),
             pref_type: None,
@@ -502,14 +502,14 @@ mod tests {
             user_pref("browser.startup.homepage", "https://example.com");
         "#;
 
-        let prefs_with_types = crate::parser::parse_prefs_js_with_types(input).unwrap();
-        let array_output: Vec<crate::types::ConfigEntry> = prefs_with_types
+        let prefs_with_types = ffcv::parser::parse_prefs_js_with_types(input).unwrap();
+        let array_output: Vec<ffcv::ConfigEntry> = prefs_with_types
             .iter()
-            .map(|(key, entry)| crate::types::ConfigEntry {
+            .map(|(key, entry)| ffcv::ConfigEntry {
                 key: key.clone(),
                 value: entry.value.clone(),
                 pref_type: Some(entry.pref_type.clone()),
-                explanation: crate::types::get_preference_explanation(key),
+                explanation: ffcv::get_preference_explanation(key),
             })
             .collect();
 

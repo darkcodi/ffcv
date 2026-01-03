@@ -1,4 +1,27 @@
-use anyhow::Context;
+//! Firefox profile management
+//!
+//! This module provides functionality for detecting and managing Firefox profiles
+//! across different operating systems (Linux, macOS, Windows). It can parse
+//! profiles.ini to find profile directories and determine the default profile.
+//!
+//! # Example
+//!
+//! ```rust
+//! use ffcv::{find_profile_path, list_profiles};
+//!
+//! // List all available Firefox profiles
+//! let profiles = list_profiles(None)?;
+//! for profile in profiles {
+//!     println!("{}: {}", profile.name, profile.path.display());
+//! }
+//!
+//! // Find a specific profile
+//! let profile_path = find_profile_path("default", None)?;
+//! println!("Default profile: {}", profile_path.display());
+//! # Ok::<(), ffcv::Error>(())
+//! ```
+
+use crate::error::{Error, Result};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -23,10 +46,28 @@ pub struct ProfileInfo {
 }
 
 /// Find the Firefox profile directory based on the profile name
+///
+/// This function locates a Firefox profile by name. It parses profiles.ini
+/// and supports Firefox 67+ install sections.
+///
+/// # Arguments
+///
+/// * `profile_name` - Name of the profile to find (e.g., "default")
+/// * `profiles_dir_opt` - Optional custom profiles directory path
+///
+/// # Example
+///
+/// ```rust
+/// use ffcv::find_profile_path;
+///
+/// let profile_path = find_profile_path("default", None)?;
+/// println!("Profile path: {}", profile_path.display());
+/// # Ok::<(), ffcv::Error>(())
+/// ```
 pub fn find_profile_path(
     profile_name: &str,
     profiles_dir_opt: Option<&std::path::Path>,
-) -> Result<PathBuf, anyhow::Error> {
+) -> Result<PathBuf> {
     let profiles_dir = get_profiles_directory(profiles_dir_opt)?;
     let profiles_ini = profiles_dir.join("profiles.ini");
 
@@ -78,16 +119,24 @@ pub fn find_profile_path(
 }
 
 /// Parse profiles.ini to extract profile information
-fn parse_profiles_ini(ini_path: &PathBuf) -> Result<Vec<FirefoxProfile>, anyhow::Error> {
+fn parse_profiles_ini(ini_path: &PathBuf) -> Result<Vec<FirefoxProfile>> {
     use configparser::ini::Ini;
 
     let mut ini = Ini::new();
-    let content = std::fs::read_to_string(ini_path)
-        .with_context(|| format!("Failed to read profiles.ini from {}", ini_path.display()))?;
+    let content = std::fs::read_to_string(ini_path).map_err(|e| {
+        Error::ProfilesIniParse(format!(
+            "Failed to read profiles.ini from {}: {}",
+            ini_path.display(),
+            e
+        ))
+    })?;
 
     // Parse the INI file (configparser handles UTF-8 BOM automatically)
     if let Err(e) = ini.read(content) {
-        return Err(anyhow::anyhow!("Failed to parse profiles.ini: {}", e));
+        return Err(Error::ProfilesIniParse(format!(
+            "Failed to parse profiles.ini: {}",
+            e
+        )));
     }
 
     let mut profiles = Vec::new();
@@ -130,14 +179,17 @@ fn parse_profiles_ini(ini_path: &PathBuf) -> Result<Vec<FirefoxProfile>, anyhow:
 
 /// Parse install sections from profiles.ini (Firefox 67+)
 /// Returns HashMap<install_hash, default_profile_path>
-fn parse_installs_ini(ini_path: &PathBuf) -> Result<HashMap<String, String>, anyhow::Error> {
+fn parse_installs_ini(ini_path: &PathBuf) -> Result<HashMap<String, String>> {
     use configparser::ini::Ini;
 
     let mut ini = Ini::new();
     let content = std::fs::read_to_string(ini_path)?;
 
     if let Err(e) = ini.read(content) {
-        return Err(anyhow::anyhow!("Failed to parse profiles.ini: {}", e));
+        return Err(Error::ProfilesIniParse(format!(
+            "Failed to parse profiles.ini: {}",
+            e
+        )));
     }
 
     let mut installs = HashMap::new();
@@ -165,7 +217,7 @@ fn get_default_profile_for_install(
     ini_path: &PathBuf,
     profiles_dir: &Path,
     profiles: &[FirefoxProfile],
-) -> Result<PathBuf, anyhow::Error> {
+) -> Result<PathBuf> {
     use configparser::ini::Ini;
 
     // Try to find the Firefox installation path
@@ -180,7 +232,10 @@ fn get_default_profile_for_install(
     let content = std::fs::read_to_string(ini_path)?;
 
     if let Err(e) = ini.read(content) {
-        return Err(anyhow::anyhow!("Failed to parse profiles.ini: {}", e));
+        return Err(Error::ProfilesIniParse(format!(
+            "Failed to parse profiles.ini: {}",
+            e
+        )));
     }
 
     // Look for the install section with the matching hash
@@ -226,14 +281,14 @@ fn get_default_profile_for_install(
     }
 
     // No install section found for this installation
-    Err(anyhow::anyhow!(
-        "No default profile found for Firefox installation at {}",
-        firefox_path.display()
-    ))
+    Err(Error::ProfileNotFound {
+        name: "default".to_string(),
+        directory: firefox_path,
+    })
 }
 
 /// Get the path to the Firefox executable
-fn get_firefox_install_path() -> Result<PathBuf, anyhow::Error> {
+fn get_firefox_install_path() -> Result<PathBuf> {
     use std::env;
 
     // Try to find Firefox in PATH
@@ -318,7 +373,10 @@ fn get_firefox_install_path() -> Result<PathBuf, anyhow::Error> {
         }
     }
 
-    Err(anyhow::anyhow!("Could not find Firefox installation"))
+    Err(Error::ProfileNotFound {
+        name: "Firefox".to_string(),
+        directory: PathBuf::from("unknown"),
+    })
 }
 
 /// Hash the installation path to get the install section name
@@ -342,16 +400,8 @@ fn hash_install_path(path: &Path) -> String {
 }
 
 /// Improved fallback: Scan profiles directory with better matching strategies
-fn scan_profiles_directory(
-    profiles_dir: &PathBuf,
-    profile_name: &str,
-) -> Result<PathBuf, anyhow::Error> {
-    let entries = std::fs::read_dir(profiles_dir).with_context(|| {
-        format!(
-            "Failed to read profiles directory: {}",
-            profiles_dir.display()
-        )
-    })?;
+fn scan_profiles_directory(profiles_dir: &PathBuf, profile_name: &str) -> Result<PathBuf> {
+    let entries = std::fs::read_dir(profiles_dir).map_err(Error::Io)?;
 
     let mut matches: Vec<PathBuf> = Vec::new();
 
@@ -386,37 +436,33 @@ fn scan_profiles_directory(
             .filter_map(|p| p.file_name().and_then(|s| s.to_str()))
             .collect();
 
-        return Err(anyhow::anyhow!(
+        return Err(Error::ProfilesIniParse(format!(
             "Multiple profiles match '{}': {}. \
              Please specify the exact profile name from 'ffcv --list' \
              or use the full directory name.",
             profile_name,
             match_names.join(", ")
-        ));
+        )));
     }
 
     // No matches
-    Err(anyhow::anyhow!(
-        "Profile '{}' not found in {}. \
-         Use 'ffcv --list' to see available profiles.",
-        profile_name,
-        profiles_dir.display()
-    ))
+    Err(Error::ProfileNotFound {
+        name: profile_name.to_string(),
+        directory: profiles_dir.clone(),
+    })
 }
 
 /// List all available Firefox profiles
-pub fn list_profiles(
-    profiles_dir_opt: Option<&std::path::Path>,
-) -> Result<Vec<ProfileInfo>, anyhow::Error> {
+pub fn list_profiles(profiles_dir_opt: Option<&std::path::Path>) -> Result<Vec<ProfileInfo>> {
     let profiles_dir = get_profiles_directory(profiles_dir_opt)?;
     let profiles_ini = profiles_dir.join("profiles.ini");
 
     if !profiles_ini.exists() {
-        return Err(anyhow::anyhow!(
+        return Err(Error::ProfilesIniParse(format!(
             "profiles.ini not found at {}. \
              Firefox may not be installed or this is not a standard Firefox setup.",
             profiles_ini.display()
-        ));
+        )));
     }
 
     let profiles = parse_profiles_ini(&profiles_ini)?;
@@ -451,9 +497,7 @@ pub fn list_profiles(
 /// 1. Manual path provided via CLI or parameter
 /// 2. MOZ_PROFILES_DIR environment variable
 /// 3. Auto-detection based on OS
-pub fn get_profiles_directory(
-    manual_path: Option<&std::path::Path>,
-) -> Result<PathBuf, anyhow::Error> {
+pub fn get_profiles_directory(manual_path: Option<&std::path::Path>) -> Result<PathBuf> {
     // Priority 1: Use manually specified path (from CLI or direct parameter)
     if let Some(path) = manual_path {
         return validate_and_use_profiles_dir(path);
@@ -470,54 +514,59 @@ pub fn get_profiles_directory(
 }
 
 /// Validate and return the profiles directory path
-fn validate_and_use_profiles_dir(path: &std::path::Path) -> Result<PathBuf, anyhow::Error> {
+fn validate_and_use_profiles_dir(path: &std::path::Path) -> Result<PathBuf> {
     // Check if path exists
     if !path.exists() {
-        return Err(anyhow::anyhow!(
+        return Err(Error::ProfilesIniParse(format!(
             "Profiles directory does not exist: {}\n\
              Please verify the path and try again.",
             path.display()
-        ));
+        )));
     }
 
     // Check if path is a directory
     if !path.is_dir() {
-        return Err(anyhow::anyhow!(
+        return Err(Error::ProfilesIniParse(format!(
             "Profiles directory path is not a directory: {}\n\
              Please provide a directory path, not a file.",
             path.display()
-        ));
+        )));
     }
 
     Ok(path.to_path_buf())
 }
 
 /// Auto-detect profiles directory based on operating system
-fn auto_detect_profiles_directory() -> Result<PathBuf, anyhow::Error> {
+fn auto_detect_profiles_directory() -> Result<PathBuf> {
     #[cfg(target_os = "linux")]
     {
-        let home = std::env::var("HOME")
-            .map_err(|_| anyhow::anyhow!("HOME environment variable not set"))?;
+        let home = std::env::var("HOME").map_err(|_| {
+            Error::ProfilesIniParse("HOME environment variable not set".to_string())
+        })?;
         Ok(PathBuf::from(home).join(".mozilla/firefox"))
     }
 
     #[cfg(target_os = "macos")]
     {
-        let home = std::env::var("HOME")
-            .map_err(|_| anyhow::anyhow!("HOME environment variable not set"))?;
+        let home = std::env::var("HOME").map_err(|_| {
+            Error::ProfilesIniParse("HOME environment variable not set".to_string())
+        })?;
         Ok(PathBuf::from(home).join("Library/Application Support/Firefox"))
     }
 
     #[cfg(target_os = "windows")]
     {
-        let appdata = std::env::var("APPDATA")
-            .map_err(|_| anyhow::anyhow!("APPDATA environment variable not set"))?;
+        let appdata = std::env::var("APPDATA").map_err(|_| {
+            Error::ProfilesIniParse("APPDATA environment variable not set".to_string())
+        })?;
         Ok(PathBuf::from(appdata).join("Mozilla/Firefox"))
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
-        Err(anyhow::anyhow!("Unsupported operating system"))
+        Err(Error::ProfilesIniParse(
+            "Unsupported operating system".to_string(),
+        ))
     }
 }
 

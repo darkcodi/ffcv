@@ -1,22 +1,87 @@
-//! Parser for Firefox preference files
+//! Parser for Firefox preference files (prefs.js)
 //!
-//! This module provides a recursive descent parser that converts tokenized
-//! Firefox prefs.js files into a HashMap of preference values.
+//! This module provides a recursive descent parser that converts Firefox's
+//! custom JavaScript-like preference syntax into structured data.
+//!
+//! # Format
+//!
+//! Firefox preferences are stored using a JavaScript-like syntax:
+//!
+//! ```text
+//! user_pref("preference.name", value);
+//! pref("preference.name", value);           // default
+//! lock_pref("preference.name", value);      // locked
+//! sticky_pref("preference.name", value);    // sticky
+//! ```
+//!
+//! # Example
+//!
+//! ```rust
+//! use ffcv::parse_prefs_js;
+//!
+//! let content = r#"
+//!     // This is a comment
+//!     user_pref("browser.startup.homepage", "https://example.com");
+//!     pref("javascript.enabled", true);
+//!     user_pref("network.proxy.port", 8080);
+//! "#;
+//!
+//! let config = parse_prefs_js(content)?;
+//! assert_eq!(config["browser.startup.homepage"], "https://example.com");
+//! assert_eq!(config["javascript.enabled"], true);
+//! # Ok::<(), ffcv::Error>(())
+//! ```
 
+use crate::error::{Error, Result};
 use crate::lexer::{Lexer, Token};
 use crate::types::{PrefEntry, PrefType};
 use std::collections::HashMap;
 
 /// Parse the prefs.js file and extract all preferences
-pub fn parse_prefs_js(content: &str) -> Result<HashMap<String, serde_json::Value>, anyhow::Error> {
+///
+/// This function parses Firefox preference files and returns a HashMap
+/// mapping preference names to their values.
+///
+/// # Example
+///
+/// ```rust
+/// use ffcv::parse_prefs_js;
+///
+/// let content = r#"
+///     user_pref("browser.startup.homepage", "https://example.com");
+///     user_pref("javascript.enabled", true);
+/// "#;
+///
+/// let config = parse_prefs_js(content)?;
+/// assert_eq!(config["browser.startup.homepage"], "https://example.com");
+/// # Ok::<(), ffcv::Error>(())
+/// ```
+pub fn parse_prefs_js(content: &str) -> Result<HashMap<String, serde_json::Value>> {
     let mut parser = Parser::new(content);
     parser.parse()
 }
 
 /// Parse the prefs.js file and extract all preferences with their types
-pub fn parse_prefs_js_with_types(
-    content: &str,
-) -> Result<HashMap<String, PrefEntry>, anyhow::Error> {
+///
+/// This function is similar to [`parse_prefs_js`] but also returns type information
+/// (user, default, locked, sticky) for each preference.
+///
+/// # Example
+///
+/// ```rust
+/// use ffcv::{parse_prefs_js_with_types, PrefType};
+///
+/// let content = r#"
+///     user_pref("browser.startup.homepage", "https://example.com");
+///     pref("javascript.enabled", true);
+/// "#;
+///
+/// let prefs = parse_prefs_js_with_types(content)?;
+/// let homepage = &prefs["browser.startup.homepage"];
+/// assert_eq!(homepage.pref_type, PrefType::User);
+/// # Ok::<(), ffcv::Error>(())
+/// ```
+pub fn parse_prefs_js_with_types(content: &str) -> Result<HashMap<String, PrefEntry>> {
     let mut parser = Parser::new(content);
     parser.parse_with_types()
 }
@@ -39,12 +104,21 @@ impl<'a> Parser<'a> {
         // Prime the pump by getting the first token
         let current = match lexer.next_token() {
             Ok(token) => Some(token),
-            Err(e) => {
+            Err(Error::Lexer { line, column, .. }) => {
                 return Parser {
                     lexer,
                     current: None,
-                    current_line: e.line,
-                    current_column: e.column,
+                    current_line: line,
+                    current_column: column,
+                }
+            }
+            // This shouldn't happen since lexer only returns Error::Lexer
+            Err(_) => {
+                return Parser {
+                    lexer,
+                    current: None,
+                    current_line: 1,
+                    current_column: 1,
                 }
             }
         };
@@ -58,18 +132,18 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse the entire input into a HashMap of preferences
-    fn parse(&mut self) -> Result<HashMap<String, serde_json::Value>, anyhow::Error> {
+    fn parse(&mut self) -> Result<HashMap<String, serde_json::Value>> {
         let mut preferences = HashMap::new();
 
         loop {
             match &self.current {
                 None => {
                     // Error occurred during lexing
-                    return Err(anyhow::anyhow!(
-                        "Parse error at line {}:{}: Lexer error",
-                        self.current_line,
-                        self.current_column
-                    ));
+                    return Err(Error::Parser {
+                        line: self.current_line,
+                        column: self.current_column,
+                        message: "Lexer error".to_string(),
+                    });
                 }
                 Some(Token::Eof) => break,
                 Some(_) => {
@@ -83,18 +157,18 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse the entire input into a HashMap of preferences with their types
-    fn parse_with_types(&mut self) -> Result<HashMap<String, PrefEntry>, anyhow::Error> {
+    fn parse_with_types(&mut self) -> Result<HashMap<String, PrefEntry>> {
         let mut preferences = HashMap::new();
 
         loop {
             match &self.current {
                 None => {
                     // Error occurred during lexing
-                    return Err(anyhow::anyhow!(
-                        "Parse error at line {}:{}: Lexer error",
-                        self.current_line,
-                        self.current_column
-                    ));
+                    return Err(Error::Parser {
+                        line: self.current_line,
+                        column: self.current_column,
+                        message: "Lexer error".to_string(),
+                    });
                 }
                 Some(Token::Eof) => break,
                 Some(_) => {
@@ -108,7 +182,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a single statement: pref_type "(" key "," value ")" ";"
-    fn parse_statement(&mut self) -> Result<(String, serde_json::Value), anyhow::Error> {
+    fn parse_statement(&mut self) -> Result<(String, serde_json::Value)> {
         // Parse the pref function name (user_pref, pref, lock_pref, sticky_pref)
         // We don't actually need to store the type since they all have the same syntax
         match &self.current {
@@ -117,12 +191,11 @@ impl<'a> Parser<'a> {
                 self.advance();
             }
             _ => {
-                return Err(anyhow::anyhow!(
-                    "Parse error at line {}:{}: Expected pref function name (user_pref, pref, lock_pref, sticky_pref), got {:?}",
-                    self.current_line,
-                    self.current_column,
-                    self.current
-                ));
+                return Err(Error::Parser {
+                    line: self.current_line,
+                    column: self.current_column,
+                    message: format!("Expected pref function name (user_pref, pref, lock_pref, sticky_pref), got {:?}", self.current),
+                });
             }
         }
 
@@ -148,9 +221,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse a single statement with type information: pref_type "(" key "," value ")" ";"
-    fn parse_statement_with_type(
-        &mut self,
-    ) -> Result<(String, serde_json::Value, PrefType), anyhow::Error> {
+    fn parse_statement_with_type(&mut self) -> Result<(String, serde_json::Value, PrefType)> {
         // Parse and capture the pref function name (user_pref, pref, lock_pref, sticky_pref)
         let pref_type = self.parse_pref_type_identifier()?;
 
@@ -176,7 +247,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse the pref type identifier and return the corresponding PrefType
-    fn parse_pref_type_identifier(&mut self) -> Result<PrefType, anyhow::Error> {
+    fn parse_pref_type_identifier(&mut self) -> Result<PrefType> {
         match &self.current {
             Some(Token::Identifier(ident)) => {
                 let pref_type = match ident.as_str() {
@@ -185,29 +256,33 @@ impl<'a> Parser<'a> {
                     "lock_pref" => PrefType::Locked,
                     "sticky_pref" => PrefType::Sticky,
                     _ => {
-                        return Err(anyhow::anyhow!(
-                            "Parse error at line {}:{}: Unknown pref function '{}'. Expected user_pref, pref, lock_pref, or sticky_pref",
-                            self.current_line,
-                            self.current_column,
-                            ident
-                        ));
+                        return Err(Error::Parser {
+                            line: self.current_line,
+                            column: self.current_column,
+                            message: format!(
+                                "Unknown pref function '{}'. Expected user_pref, pref, lock_pref, or sticky_pref",
+                                ident
+                            ),
+                        });
                     }
                 };
                 // Consume the identifier
                 self.advance();
                 Ok(pref_type)
             }
-            _ => Err(anyhow::anyhow!(
-                "Parse error at line {}:{}: Expected pref function name (user_pref, pref, lock_pref, sticky_pref), got {:?}",
-                self.current_line,
-                self.current_column,
-                self.current
-            )),
+            _ => Err(Error::Parser {
+                line: self.current_line,
+                column: self.current_column,
+                message: format!(
+                    "Expected pref function name (user_pref, pref, lock_pref, sticky_pref), got {:?}",
+                    self.current
+                ),
+            }),
         }
     }
 
     /// Parse a value (string, number, boolean, null)
-    fn parse_value(&mut self) -> Result<serde_json::Value, anyhow::Error> {
+    fn parse_value(&mut self) -> Result<serde_json::Value> {
         match &self.current {
             Some(Token::String(_)) => {
                 let token = std::mem::take(&mut self.current);
@@ -225,12 +300,11 @@ impl<'a> Parser<'a> {
                     self.advance();
                     Ok(result)
                 } else {
-                    Err(anyhow::anyhow!(
-                        "Parse error at line {}:{}: Invalid number {}",
-                        self.current_line,
-                        self.current_column,
-                        num_value
-                    ))
+                    Err(Error::Parser {
+                        line: self.current_line,
+                        column: self.current_column,
+                        message: format!("Invalid number {}", num_value),
+                    })
                 }
             }
             Some(Token::Boolean(b)) => {
@@ -244,22 +318,21 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(serde_json::Value::Null)
             }
-            Some(token) => Err(anyhow::anyhow!(
-                "Parse error at line {}:{}: Expected value, got {:?}",
-                self.current_line,
-                self.current_column,
-                token
-            )),
-            None => Err(anyhow::anyhow!(
-                "Parse error at line {}:{}: Unexpected end of input",
-                self.current_line,
-                self.current_column
-            )),
+            Some(token) => Err(Error::Parser {
+                line: self.current_line,
+                column: self.current_column,
+                message: format!("Expected value, got {:?}", token),
+            }),
+            None => Err(Error::Parser {
+                line: self.current_line,
+                column: self.current_column,
+                message: "Unexpected end of input".to_string(),
+            }),
         }
     }
 
     /// Expect a specific token and consume it
-    fn expect_token(&mut self, expected: Token) -> Result<(), anyhow::Error> {
+    fn expect_token(&mut self, expected: Token) -> Result<()> {
         match &self.current {
             Some(token) if *token == expected => {
                 // Take the token and advance to next
@@ -267,23 +340,21 @@ impl<'a> Parser<'a> {
                 self.advance();
                 Ok(())
             }
-            Some(token) => Err(anyhow::anyhow!(
-                "Parse error at line {}:{}: Expected {:?}, got {:?}",
-                self.current_line,
-                self.current_column,
-                expected,
-                token
-            )),
-            None => Err(anyhow::anyhow!(
-                "Parse error at line {}:{}: Unexpected end of input",
-                self.current_line,
-                self.current_column
-            )),
+            Some(token) => Err(Error::Parser {
+                line: self.current_line,
+                column: self.current_column,
+                message: format!("Expected {:?}, got {:?}", expected, token),
+            }),
+            None => Err(Error::Parser {
+                line: self.current_line,
+                column: self.current_column,
+                message: "Unexpected end of input".to_string(),
+            }),
         }
     }
 
     /// Expect a string token and return its value
-    fn expect_string(&mut self) -> Result<String, anyhow::Error> {
+    fn expect_string(&mut self) -> Result<String> {
         match &self.current {
             Some(Token::String(_)) => {
                 // Take the token to extract the String without cloning
@@ -294,17 +365,16 @@ impl<'a> Parser<'a> {
                     _ => unreachable!(),
                 }
             }
-            Some(token) => Err(anyhow::anyhow!(
-                "Parse error at line {}:{}: Expected string, got {:?}",
-                self.current_line,
-                self.current_column,
-                token
-            )),
-            None => Err(anyhow::anyhow!(
-                "Parse error at line {}:{}: Unexpected end of input",
-                self.current_line,
-                self.current_column
-            )),
+            Some(token) => Err(Error::Parser {
+                line: self.current_line,
+                column: self.current_column,
+                message: format!("Expected string, got {:?}", token),
+            }),
+            None => Err(Error::Parser {
+                line: self.current_line,
+                column: self.current_column,
+                message: "Unexpected end of input".to_string(),
+            }),
         }
     }
 
@@ -312,9 +382,14 @@ impl<'a> Parser<'a> {
     fn advance(&mut self) {
         self.current = match self.lexer.next_token() {
             Ok(token) => Some(token),
-            Err(e) => {
-                self.current_line = e.line;
-                self.current_column = e.column;
+            Err(Error::Lexer { line, column, .. }) => {
+                self.current_line = line;
+                self.current_column = column;
+                None
+            }
+            Err(_) => {
+                // Lexer should only return Lexer errors, but handle other errors gracefully
+                self.current = None;
                 None
             }
         };

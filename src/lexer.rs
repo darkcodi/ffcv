@@ -4,6 +4,7 @@
 //! for parsing Firefox prefs.js files. It handles all JavaScript escape sequences
 //! and tracks line/column numbers for accurate error reporting.
 
+use crate::error::{Error, Result};
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -56,7 +57,7 @@ impl<'a> Lexer<'a> {
     }
 
     /// Get the next token from the input
-    pub fn next_token(&mut self) -> Result<Token, LexError> {
+    pub fn next_token(&mut self) -> Result<Token> {
         self.skip_whitespace_and_comments();
 
         // Check for EOF
@@ -86,7 +87,7 @@ impl<'a> Lexer<'a> {
             '"' => self.lex_string(),
             '-' | '0'..='9' => self.lex_number(),
             'a'..='z' | 'A'..='Z' | '_' => self.lex_identifier(),
-            _ => Err(LexError {
+            _ => Err(Error::Lexer {
                 message: format!("Unexpected character: '{}'", c),
                 line: self.line,
                 column: self.column,
@@ -187,7 +188,7 @@ impl<'a> Lexer<'a> {
     }
 
     /// Lex an identifier (e.g., user_pref, pref, true, false, null)
-    fn lex_identifier(&mut self) -> Result<Token, LexError> {
+    fn lex_identifier(&mut self) -> Result<Token> {
         let _start_line = self.line;
         let _start_col = self.column;
 
@@ -211,7 +212,7 @@ impl<'a> Lexer<'a> {
     }
 
     /// Lex a string literal (only double-quoted strings in prefs.js)
-    fn lex_string(&mut self) -> Result<Token, LexError> {
+    fn lex_string(&mut self) -> Result<Token> {
         let start_col = self.column;
 
         // Skip opening quote
@@ -267,7 +268,7 @@ impl<'a> Lexer<'a> {
                             if let Some(&c) = self.chars.peek() {
                                 if c == '0' {
                                     // \00 or \000 - octal escape, not supported
-                                    return Err(LexError {
+                                    return Err(Error::Lexer {
                                         message: "Octal escape sequences are not supported. Use \\x00 instead.".to_string(),
                                         line: self.line,
                                         column: self.column,
@@ -294,14 +295,14 @@ impl<'a> Lexer<'a> {
                                 if let Ok(byte) = u8::from_str_radix(&hex, 16) {
                                     result.push(byte as char);
                                 } else {
-                                    return Err(LexError {
+                                    return Err(Error::Lexer {
                                         message: format!("Invalid hex escape: \\x{}", hex),
                                         line: self.line,
                                         column: self.column,
                                     });
                                 }
                             } else {
-                                return Err(LexError {
+                                return Err(Error::Lexer {
                                     message: format!("Incomplete hex escape: \\x{}", hex),
                                     line: self.line,
                                     column: self.column,
@@ -328,14 +329,14 @@ impl<'a> Lexer<'a> {
                                         std::char::from_u32(codepoint as u32).unwrap_or('\u{FFFD}'), // Replacement character
                                     );
                                 } else {
-                                    return Err(LexError {
+                                    return Err(Error::Lexer {
                                         message: format!("Invalid unicode escape: \\u{}", hex),
                                         line: self.line,
                                         column: self.column,
                                     });
                                 }
                             } else {
-                                return Err(LexError {
+                                return Err(Error::Lexer {
                                     message: format!("Incomplete unicode escape: \\u{}", hex),
                                     line: self.line,
                                     column: self.column,
@@ -343,14 +344,14 @@ impl<'a> Lexer<'a> {
                             }
                         }
                         Some(c) => {
-                            return Err(LexError {
+                            return Err(Error::Lexer {
                                 message: format!("Invalid escape sequence: \\{}", c),
                                 line: self.line,
                                 column: self.column,
                             });
                         }
                         None => {
-                            return Err(LexError {
+                            return Err(Error::Lexer {
                                 message: "Unexpected end of input in escape sequence".to_string(),
                                 line: self.line,
                                 column: self.column,
@@ -373,7 +374,7 @@ impl<'a> Lexer<'a> {
                     result.push(c);
                 }
                 None => {
-                    return Err(LexError {
+                    return Err(Error::Lexer {
                         message: "Unterminated string literal".to_string(),
                         line: self.line,
                         column: start_col,
@@ -384,7 +385,7 @@ impl<'a> Lexer<'a> {
     }
 
     /// Lex a number (integer or float, including scientific notation)
-    fn lex_number(&mut self) -> Result<Token, LexError> {
+    fn lex_number(&mut self) -> Result<Token> {
         let start_col = self.column;
 
         let mut num_str = String::new();
@@ -445,7 +446,7 @@ impl<'a> Lexer<'a> {
             }
 
             if !has_exp_digit {
-                return Err(LexError {
+                return Err(Error::Lexer {
                     message: "Missing exponent digits in scientific notation".to_string(),
                     line: self.line,
                     column: self.column,
@@ -456,7 +457,7 @@ impl<'a> Lexer<'a> {
         // Parse the number
         match num_str.parse::<f64>() {
             Ok(n) => Ok(Token::Number(n)),
-            Err(_) => Err(LexError {
+            Err(_) => Err(Error::Lexer {
                 message: format!("Failed to parse number: {}", num_str),
                 line: self.line,
                 column: start_col,
@@ -464,26 +465,6 @@ impl<'a> Lexer<'a> {
         }
     }
 }
-
-/// Error produced during lexing
-#[derive(Debug)]
-pub struct LexError {
-    pub message: String,
-    pub line: usize,
-    pub column: usize,
-}
-
-impl std::fmt::Display for LexError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "Lex error at line {}: column {}: {}",
-            self.line, self.column, self.message
-        )
-    }
-}
-
-impl std::error::Error for LexError {}
 
 #[cfg(test)]
 mod tests {

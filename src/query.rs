@@ -1,16 +1,62 @@
+//! Query and filtering operations for Firefox preferences
+//!
+//! This module provides functionality for filtering preferences using glob patterns.
+//!
+//! # Example
+//!
+//! ```rust
+//! use ffcv::{parse_prefs_js, query_preferences};
+//!
+//! let content = r#"
+//!     user_pref("network.proxy.http", "proxy.example.com");
+//!     user_pref("network.proxy.http_port", 8080);
+//!     user_pref("browser.startup.homepage", "https://example.com");
+//! "#;
+//!
+//! let config = parse_prefs_js(content)?;
+//! let network_prefs = query_preferences(&config, &["network.*"])?;
+//! assert_eq!(network_prefs.len(), 2);
+//! # Ok::<(), ffcv::Error>(())
+//! ```
+
+use crate::error::{Error, Result};
 use crate::types::Config;
 use glob::Pattern;
 
 /// Query configuration preferences by glob patterns (OR logic)
-/// Returns preferences matching any of the provided patterns
-pub fn query_preferences(preferences: &Config, patterns: &[&str]) -> Result<Config, anyhow::Error> {
+///
+/// Returns preferences matching any of the provided patterns. Patterns use
+/// standard glob syntax (e.g., "network.*", "browser.*.enabled").
+///
+/// # Arguments
+///
+/// * `preferences` - The configuration map to query
+/// * `patterns` - Slice of glob patterns to match against (OR logic)
+///
+/// # Example
+///
+/// ```rust
+/// use ffcv::query_preferences;
+/// use serde_json::json;
+///
+/// let mut config = std::collections::HashMap::new();
+/// config.insert("network.proxy.http".to_string(), json!("proxy.example.com"));
+/// config.insert("browser.startup.homepage".to_string(), json!("https://example.com"));
+///
+/// let network_prefs = query_preferences(&config, &["network.*"])?;
+/// assert_eq!(network_prefs.len(), 1);
+/// # Ok::<(), ffcv::Error>(())
+/// ```
+pub fn query_preferences(preferences: &Config, patterns: &[&str]) -> Result<Config> {
     // Compile all patterns first to fail fast on invalid patterns
     let compiled_patterns: Vec<Pattern> = patterns
         .iter()
         .map(|p| {
-            Pattern::new(p).map_err(|e| anyhow::anyhow!("Invalid query pattern '{}': {}", p, e))
+            Pattern::new(p).map_err(|e| {
+                Error::InvalidGlobPattern(format!("Invalid query pattern '{}': {}", p, e))
+            })
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>>>()?;
 
     // Query preferences: keep if ANY pattern matches
     // First count matching entries to pre-allocate HashMap capacity

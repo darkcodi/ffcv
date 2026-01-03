@@ -2,12 +2,26 @@
 name = "ffcv"
 version = "0.1.0"
 edition = "2021"
+description = "Firefox Configuration Viewer - Parse and query Firefox preference files"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yourusername/ffcv"
+keywords = ["firefox", "preferences", "config", "parser"]
+categories = ["parser-implementations", "config"]
+
+[lib]
+name = "ffcv"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ffcv"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.0", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 anyhow = "1.0"
+thiserror = "1.0"
 configparser = "3.0"
 cityhasher = "0.1"
 glob = "0.3"

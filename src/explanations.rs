@@ -19,10 +19,14 @@ use std::sync::OnceLock;
 ///
 /// # Example
 /// ```rust
-/// HashMap::from([
+/// use std::collections::HashMap;
+///
+/// let explanations = HashMap::from([
 ///     ("javascript.enabled", "Master switch to enable or disable JavaScript..."),
 ///     ("browser.startup.homepage", "The default homepage that Firefox opens with..."),
-/// ])
+/// ]);
+///
+/// assert!(explanations.contains_key("javascript.enabled"));
 /// ```
 static PREF_EXPLANATIONS: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
 
@@ -38,6 +42,8 @@ static PREF_EXPLANATIONS: OnceLock<HashMap<&'static str, &'static str>> = OnceLo
 ///
 /// # Example
 /// ```rust
+/// use ffcv::get_preference_explanation;
+///
 /// if let Some(explanation) = get_preference_explanation("javascript.enabled") {
 ///     assert!(explanation.contains("JavaScript"));
 /// }
