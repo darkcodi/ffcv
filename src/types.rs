@@ -67,6 +67,8 @@ pub struct PrefEntry {
     pub value: serde_json::Value,
     /// The type of preference (user, default, locked, sticky)
     pub pref_type: PrefType,
+    /// Optional human-readable explanation for the preference
+    pub explanation: Option<&'static str>,
 }
 
 /// Representation for array output format

@@ -30,25 +30,16 @@ use std::sync::OnceLock;
 /// ```
 static PREF_EXPLANATIONS: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
 
-/// Get explanation for a preference key
+/// Get explanation for a preference key (returns static string reference)
 ///
-/// Returns `Some` with the explanation text if available, otherwise returns `None`.
+/// Internal function that returns `Option<&'static str>` for efficient lookup.
 ///
 /// # Arguments
 /// * `key` - The preference key to look up (e.g., "javascript.enabled")
 ///
 /// # Returns
-/// `Some(String)` containing the explanation, or `None` if not found
-///
-/// # Example
-/// ```rust
-/// use ffcv::get_preference_explanation;
-///
-/// if let Some(explanation) = get_preference_explanation("javascript.enabled") {
-///     assert!(explanation.contains("JavaScript"));
-/// }
-/// ```
-pub fn get_preference_explanation(key: &str) -> Option<String> {
+/// `Some(&'static str)` containing the explanation, or `None` if not found
+pub(crate) fn get_preference_explanation_static(key: &str) -> Option<&'static str> {
     PREF_EXPLANATIONS
         .get_or_init(|| {
             // Add more explanations here following the pattern above:
@@ -1513,5 +1504,27 @@ pub fn get_preference_explanation(key: &str) -> Option<String> {
             ])
         })
         .get(key)
-        .map(|s| s.to_string())
+        .copied()
+}
+
+/// Get explanation for a preference key
+///
+/// Returns `Some` with the explanation text if available, otherwise returns `None`.
+///
+/// # Arguments
+/// * `key` - The preference key to look up (e.g., "javascript.enabled")
+///
+/// # Returns
+/// `Some(String)` containing the explanation, or `None` if not found
+///
+/// # Example
+/// ```rust
+/// use ffcv::get_preference_explanation;
+///
+/// if let Some(explanation) = get_preference_explanation("javascript.enabled") {
+///     assert!(explanation.contains("JavaScript"));
+/// }
+/// ```
+pub fn get_preference_explanation(key: &str) -> Option<String> {
+    get_preference_explanation_static(key).map(|s| s.to_string())
 }

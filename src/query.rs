@@ -44,11 +44,13 @@ use glob::Pattern;
 ///         key: "network.proxy.http".to_string(),
 ///         value: json!("proxy.example.com"),
 ///         pref_type: PrefType::User,
+///         explanation: None,
 ///     },
 ///     PrefEntry {
 ///         key: "browser.startup.homepage".to_string(),
 ///         value: json!("https://example.com"),
 ///         pref_type: PrefType::User,
+///         explanation: None,
 ///     },
 /// ];
 ///
@@ -93,26 +95,31 @@ mod tests {
                 key: "network.proxy.type".to_string(),
                 value: Value::Number(1.into()),
                 pref_type: PrefType::User,
+                explanation: None,
             },
             PrefEntry {
                 key: "network.cookie.cookieBehavior".to_string(),
                 value: Value::Number(0.into()),
                 pref_type: PrefType::User,
+                explanation: None,
             },
             PrefEntry {
                 key: "browser.startup.homepage".to_string(),
                 value: Value::String("https://example.com".to_string()),
                 pref_type: PrefType::User,
+                explanation: None,
             },
             PrefEntry {
                 key: "browser.search.region".to_string(),
                 value: Value::String("US".to_string()),
                 pref_type: PrefType::User,
+                explanation: None,
             },
             PrefEntry {
                 key: "javascript.enabled".to_string(),
                 value: Value::Bool(true),
                 pref_type: PrefType::Default,
+                explanation: None,
             },
         ]
     }

@@ -125,10 +125,12 @@ impl<'a> Parser<'a> {
                 Some(Token::Eof) => break,
                 Some(_) => {
                     let (key, value, pref_type) = self.parse_statement_with_type()?;
+                    let explanation = crate::explanations::get_preference_explanation_static(&key);
                     preferences.push(PrefEntry {
                         key,
                         value,
                         pref_type,
+                        explanation,
                     });
                 }
             }
@@ -910,5 +912,33 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("Unknown pref function"));
+    }
+
+    #[test]
+    fn test_parse_with_explanations() {
+        let input = r#"
+            user_pref("javascript.enabled", true);
+            user_pref("unknown.preference", "test");
+        "#;
+
+        let result = parse_prefs_js(input).unwrap();
+
+        // javascript.enabled has an explanation
+        let js_entry = result
+            .iter()
+            .find(|e| e.key == "javascript.enabled")
+            .unwrap();
+        assert_eq!(js_entry.key, "javascript.enabled");
+        assert_eq!(js_entry.pref_type, PrefType::User);
+        assert!(js_entry.explanation.is_some());
+        assert!(js_entry.explanation.unwrap().contains("JavaScript"));
+
+        // unknown.preference has no explanation
+        let unknown_entry = result
+            .iter()
+            .find(|e| e.key == "unknown.preference")
+            .unwrap();
+        assert_eq!(unknown_entry.key, "unknown.preference");
+        assert!(unknown_entry.explanation.is_none());
     }
 }
