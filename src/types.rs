@@ -4,7 +4,6 @@
 //! for representing Firefox preferences and their metadata.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 // Re-export the explanation function for convenience
 pub use crate::explanations::get_preference_explanation;
@@ -45,16 +44,16 @@ pub enum PrefType {
 
 /// Internal type for parser that always includes pref type
 ///
-/// This structure is returned by `parse_prefs_js_with_types()` and contains
+/// This structure is returned by `parse_prefs_js()` and contains
 /// both the preference value and its type.
 ///
 /// # Example
 ///
 /// ```rust
-/// use ffcv::{parse_prefs_js_with_types, PrefType};
+/// use ffcv::{parse_prefs_js, PrefType};
 ///
 /// let content = r#"user_pref("test", true);"#;
-/// let prefs = parse_prefs_js_with_types(content)?;
+/// let prefs = parse_prefs_js(content)?;
 /// let entry = prefs.iter().find(|e| e.key == "test").unwrap();
 /// assert_eq!(entry.key, "test");
 /// assert_eq!(entry.pref_type, PrefType::User);
@@ -69,23 +68,6 @@ pub struct PrefEntry {
     /// The type of preference (user, default, locked, sticky)
     pub pref_type: PrefType,
 }
-
-/// Main output structure for the Firefox configuration
-///
-/// This is a type alias for a HashMap mapping preference names to their values.
-/// Used as the return type for `parse_prefs_js()`.
-///
-/// # Example
-///
-/// ```rust
-/// use ffcv::{parse_prefs_js, Config};
-///
-/// let content = r#"user_pref("test", true);"#;
-/// let config: Config = parse_prefs_js(content)?;
-/// assert_eq!(config["test"], true);
-/// # Ok::<(), ffcv::Error>(())
-/// ```
-pub type Config = HashMap<String, serde_json::Value>;
 
 /// Representation for array output format
 ///

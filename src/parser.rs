@@ -17,7 +17,7 @@
 //! # Example
 //!
 //! ```rust
-//! use ffcv::parse_prefs_js;
+//! use ffcv::{parse_prefs_js, PrefType};
 //!
 //! let content = r#"
 //!     // This is a comment
@@ -26,66 +26,41 @@
 //!     user_pref("network.proxy.port", 8080);
 //! "#;
 //!
-//! let config = parse_prefs_js(content)?;
-//! assert_eq!(config["browser.startup.homepage"], "https://example.com");
-//! assert_eq!(config["javascript.enabled"], true);
+//! let prefs = parse_prefs_js(content)?;
+//! let homepage = prefs.iter().find(|e| e.key == "browser.startup.homepage").unwrap();
+//! assert_eq!(homepage.value, "https://example.com");
+//! assert_eq!(homepage.pref_type, PrefType::User);
 //! # Ok::<(), ffcv::Error>(())
 //! ```
 
 use crate::error::{Error, Result};
 use crate::lexer::{Lexer, Token};
 use crate::types::{PrefEntry, PrefType};
-use std::collections::HashMap;
 
 /// Parse the prefs.js file and extract all preferences
 ///
-/// This function parses Firefox preference files and returns a HashMap
-/// mapping preference names to their values.
+/// This function parses Firefox preference files and returns a Vec of
+/// preference entries with their types and values.
 ///
 /// # Example
 ///
 /// ```rust
-/// use ffcv::parse_prefs_js;
+/// use ffcv::{parse_prefs_js, PrefEntry, PrefType};
 ///
 /// let content = r#"
 ///     user_pref("browser.startup.homepage", "https://example.com");
 ///     user_pref("javascript.enabled", true);
 /// "#;
 ///
-/// let config = parse_prefs_js(content)?;
-/// assert_eq!(config["browser.startup.homepage"], "https://example.com");
-/// # Ok::<(), ffcv::Error>(())
-/// ```
-pub fn parse_prefs_js(content: &str) -> Result<HashMap<String, serde_json::Value>> {
-    let mut parser = Parser::new(content);
-    parser.parse()
-}
-
-/// Parse the prefs.js file and extract all preferences with their types
-///
-/// This function is similar to [`parse_prefs_js`] but also returns type information
-/// (user, default, locked, sticky) for each preference.
-///
-/// # Example
-///
-/// ```rust
-/// use ffcv::{parse_prefs_js_with_types, PrefType};
-///
-/// let content = r#"
-///     user_pref("browser.startup.homepage", "https://example.com");
-///     pref("javascript.enabled", true);
-/// "#;
-///
-/// let prefs = parse_prefs_js_with_types(content)?;
-/// let homepage = prefs.iter()
-///     .find(|e| e.key == "browser.startup.homepage")
-///     .unwrap();
+/// let prefs = parse_prefs_js(content)?;
+/// let homepage = prefs.iter().find(|e| e.key == "browser.startup.homepage").unwrap();
+/// assert_eq!(homepage.value, "https://example.com");
 /// assert_eq!(homepage.pref_type, PrefType::User);
 /// # Ok::<(), ffcv::Error>(())
 /// ```
-pub fn parse_prefs_js_with_types(content: &str) -> Result<Vec<PrefEntry>> {
+pub fn parse_prefs_js(content: &str) -> Result<Vec<PrefEntry>> {
     let mut parser = Parser::new(content);
-    parser.parse_with_types()
+    parser.parse()
 }
 
 /// Parser for Firefox preference files
@@ -133,33 +108,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse the entire input into a HashMap of preferences
-    fn parse(&mut self) -> Result<HashMap<String, serde_json::Value>> {
-        let mut preferences = HashMap::new();
-
-        loop {
-            match &self.current {
-                None => {
-                    // Error occurred during lexing
-                    return Err(Error::Parser {
-                        line: self.current_line,
-                        column: self.current_column,
-                        message: "Lexer error".to_string(),
-                    });
-                }
-                Some(Token::Eof) => break,
-                Some(_) => {
-                    let (key, value) = self.parse_statement()?;
-                    preferences.insert(key, value);
-                }
-            }
-        }
-
-        Ok(preferences)
-    }
-
     /// Parse the entire input into a Vec of preferences with their types
-    fn parse_with_types(&mut self) -> Result<Vec<PrefEntry>> {
+    fn parse(&mut self) -> Result<Vec<PrefEntry>> {
         let mut preferences = Vec::new();
 
         loop {
@@ -176,7 +126,7 @@ impl<'a> Parser<'a> {
                 Some(_) => {
                     let (key, value, pref_type) = self.parse_statement_with_type()?;
                     preferences.push(PrefEntry {
-                        key: key.clone(),
+                        key,
                         value,
                         pref_type,
                     });
@@ -185,45 +135,6 @@ impl<'a> Parser<'a> {
         }
 
         Ok(preferences)
-    }
-
-    /// Parse a single statement: pref_type "(" key "," value ")" ";"
-    fn parse_statement(&mut self) -> Result<(String, serde_json::Value)> {
-        // Parse the pref function name (user_pref, pref, lock_pref, sticky_pref)
-        // We don't actually need to store the type since they all have the same syntax
-        match &self.current {
-            Some(Token::Identifier(_)) => {
-                // Consume the identifier
-                self.advance();
-            }
-            _ => {
-                return Err(Error::Parser {
-                    line: self.current_line,
-                    column: self.current_column,
-                    message: format!("Expected pref function name (user_pref, pref, lock_pref, sticky_pref), got {:?}", self.current),
-                });
-            }
-        }
-
-        // Expect left parenthesis
-        self.expect_token(Token::LeftParen)?;
-
-        // Expect key (string)
-        let key = self.expect_string()?;
-
-        // Expect comma
-        self.expect_token(Token::Comma)?;
-
-        // Parse value
-        let value = self.parse_value()?;
-
-        // Expect right parenthesis
-        self.expect_token(Token::RightParen)?;
-
-        // Expect semicolon
-        self.expect_token(Token::Semicolon)?;
-
-        Ok((key, value))
     }
 
     /// Parse a single statement with type information: pref_type "(" key "," value ")" ";"
@@ -411,10 +322,15 @@ mod tests {
         let input = r#"user_pref("browser.startup.homepage", "https://example.com");"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
+        let entry = result
+            .iter()
+            .find(|e| e.key == "browser.startup.homepage")
+            .unwrap();
         assert_eq!(
-            result["browser.startup.homepage"],
+            entry.value,
             serde_json::Value::String("https://example.com".to_string())
         );
+        assert_eq!(entry.pref_type, PrefType::User);
     }
 
     #[test]
@@ -422,7 +338,12 @@ mod tests {
         let input = r#"user_pref("javascript.enabled", true);"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
-        assert_eq!(result["javascript.enabled"], serde_json::Value::Bool(true));
+        let entry = result
+            .iter()
+            .find(|e| e.key == "javascript.enabled")
+            .unwrap();
+        assert_eq!(entry.value, serde_json::Value::Bool(true));
+        assert_eq!(entry.pref_type, PrefType::User);
     }
 
     #[test]
@@ -430,13 +351,18 @@ mod tests {
         let input = r#"user_pref("network.cookie.cookieBehavior", 0);"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
+        let entry = result
+            .iter()
+            .find(|e| e.key == "network.cookie.cookieBehavior")
+            .unwrap();
         // Check that the value is a number and equals 0
-        match &result["network.cookie.cookieBehavior"] {
+        match &entry.value {
             serde_json::Value::Number(n) => {
                 assert_eq!(n.as_f64(), Some(0.0));
             }
             _ => panic!("Expected number"),
         }
+        assert_eq!(entry.pref_type, PrefType::User);
     }
 
     #[test]
@@ -467,10 +393,12 @@ mod tests {
         let input = r#"user_pref("test", "value with \"quotes\"");"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
+        let entry = result.iter().find(|e| e.key == "test").unwrap();
         assert_eq!(
-            result["test"],
+            entry.value,
             serde_json::Value::String("value with \"quotes\"".to_string())
         );
+        assert_eq!(entry.pref_type, PrefType::User);
     }
 
     #[test]
@@ -478,7 +406,9 @@ mod tests {
         let input = r#"user_pref("test", 3.14);"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
-        assert!(result["test"].is_number());
+        let entry = result.iter().find(|e| e.key == "test").unwrap();
+        assert!(entry.value.is_number());
+        assert_eq!(entry.pref_type, PrefType::User);
     }
 
     #[test]
@@ -486,7 +416,9 @@ mod tests {
         let input = r#"user_pref("test", null);"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
-        assert_eq!(result["test"], serde_json::Value::Null);
+        let entry = result.iter().find(|e| e.key == "test").unwrap();
+        assert_eq!(entry.value, serde_json::Value::Null);
+        assert_eq!(entry.pref_type, PrefType::User);
     }
 
     // New tests for enhanced functionality
@@ -496,10 +428,15 @@ mod tests {
         let input = r#"pref("browser.startup.homepage", "https://example.com");"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
+        let entry = result
+            .iter()
+            .find(|e| e.key == "browser.startup.homepage")
+            .unwrap();
         assert_eq!(
-            result["browser.startup.homepage"],
+            entry.value,
             serde_json::Value::String("https://example.com".to_string())
         );
+        assert_eq!(entry.pref_type, PrefType::Default);
     }
 
     #[test]
@@ -507,7 +444,12 @@ mod tests {
         let input = r#"lock_pref("javascript.enabled", false);"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
-        assert_eq!(result["javascript.enabled"], serde_json::Value::Bool(false));
+        let entry = result
+            .iter()
+            .find(|e| e.key == "javascript.enabled")
+            .unwrap();
+        assert_eq!(entry.value, serde_json::Value::Bool(false));
+        assert_eq!(entry.pref_type, PrefType::Locked);
     }
 
     #[test]
@@ -515,13 +457,18 @@ mod tests {
         let input = r#"sticky_pref("network.proxy.type", 1);"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
+        let entry = result
+            .iter()
+            .find(|e| e.key == "network.proxy.type")
+            .unwrap();
         // Check that the value is a number and equals 1
-        match &result["network.proxy.type"] {
+        match &entry.value {
             serde_json::Value::Number(n) => {
                 assert_eq!(n.as_f64(), Some(1.0));
             }
             _ => panic!("Expected number"),
         }
+        assert_eq!(entry.pref_type, PrefType::Sticky);
     }
 
     #[test]
@@ -529,10 +476,12 @@ mod tests {
         let input = r#"user_pref("complex.url", "http://example.com?foo=bar,baz");"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
+        let entry = result.iter().find(|e| e.key == "complex.url").unwrap();
         assert_eq!(
-            result["complex.url"],
+            entry.value,
             serde_json::Value::String("http://example.com?foo=bar,baz".to_string())
         );
+        assert_eq!(entry.pref_type, PrefType::User);
     }
 
     #[test]
@@ -540,10 +489,12 @@ mod tests {
         let input = r#"user_pref("test.id", "c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0");"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
+        let entry = result.iter().find(|e| e.key == "test.id").unwrap();
         assert_eq!(
-            result["test.id"],
+            entry.value,
             serde_json::Value::String("c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0".to_string())
         );
+        assert_eq!(entry.pref_type, PrefType::User);
     }
 
     #[test]
@@ -552,7 +503,7 @@ mod tests {
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(
-            result["test"],
+            result.iter().find(|e| e.key == "test").unwrap().value,
             serde_json::Value::String("{\"key\":\"value\"}".to_string())
         );
     }
@@ -563,7 +514,7 @@ mod tests {
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(
-            result["test"],
+            result.iter().find(|e| e.key == "test").unwrap().value,
             serde_json::Value::String("[1,2,3]".to_string())
         );
     }
@@ -575,7 +526,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         // Note: lexer processes the escapes, so we get single backslashes
         assert_eq!(
-            result["test"],
+            result.iter().find(|e| e.key == "test").unwrap().value,
             serde_json::Value::String("C:\\path\\to\\file".to_string())
         );
     }
@@ -585,7 +536,10 @@ mod tests {
         let input = r#"user_pref("test", "\u0041");"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
-        assert_eq!(result["test"], serde_json::Value::String("A".to_string()));
+        assert_eq!(
+            result.iter().find(|e| e.key == "test").unwrap().value,
+            serde_json::Value::String("A".to_string())
+        );
     }
 
     #[test]
@@ -593,7 +547,10 @@ mod tests {
         let input = r#"user_pref("test", "\x41");"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
-        assert_eq!(result["test"], serde_json::Value::String("A".to_string()));
+        assert_eq!(
+            result.iter().find(|e| e.key == "test").unwrap().value,
+            serde_json::Value::String("A".to_string())
+        );
     }
 
     #[test]
@@ -602,7 +559,7 @@ mod tests {
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(
-            result["test"],
+            result.iter().find(|e| e.key == "test").unwrap().value,
             serde_json::Value::String("line1\nline2\ttab".to_string())
         );
     }
@@ -613,7 +570,7 @@ mod tests {
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
         // Check that the value is a number and equals -42
-        match &result["test"] {
+        match &result.iter().find(|e| e.key == "test").unwrap().value {
             serde_json::Value::Number(n) => {
                 assert_eq!(n.as_f64(), Some(-42.0));
             }
@@ -626,7 +583,12 @@ mod tests {
         let input = r#"user_pref("test", -3.14);"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
-        assert!(result["test"].is_number());
+        assert!(result
+            .iter()
+            .find(|e| e.key == "test")
+            .unwrap()
+            .value
+            .is_number());
     }
 
     #[test]
@@ -634,7 +596,12 @@ mod tests {
         let input = r#"user_pref("test", 1.5e10);"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
-        assert!(result["test"].is_number());
+        assert!(result
+            .iter()
+            .find(|e| e.key == "test")
+            .unwrap()
+            .value
+            .is_number());
     }
 
     #[test]
@@ -642,7 +609,12 @@ mod tests {
         let input = r#"user_pref("test", 3e-8);"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
-        assert!(result["test"].is_number());
+        assert!(result
+            .iter()
+            .find(|e| e.key == "test")
+            .unwrap()
+            .value
+            .is_number());
     }
 
     #[test]
@@ -650,7 +622,12 @@ mod tests {
         let input = r#"user_pref("test", -2.5e+3);"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
-        assert!(result["test"].is_number());
+        assert!(result
+            .iter()
+            .find(|e| e.key == "test")
+            .unwrap()
+            .value
+            .is_number());
     }
 
     #[test]
@@ -678,9 +655,12 @@ mod tests {
     fn test_malformed_unknown_pref_function() {
         let input = r#"unknown_func("test", "value");"#;
         let result = parse_prefs_js(input);
-        // This should actually work since we accept any identifier
-        // The old implementation would also accept it
-        assert!(result.is_ok());
+        // Now that we parse types, we reject unknown pref functions
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown pref function"));
     }
 
     #[test]
@@ -692,7 +672,7 @@ mod tests {
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(
-            result["test"],
+            result.iter().find(|e| e.key == "test").unwrap().value,
             serde_json::Value::String("value".to_string())
         );
     }
@@ -734,10 +714,15 @@ mod tests {
             r#"user_pref("sidebar.backupState", "{\"command\":\"\",\"panelOpen\":false}");"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
+        let entry = result
+            .iter()
+            .find(|e| e.key == "sidebar.backupState")
+            .unwrap();
         assert_eq!(
-            result["sidebar.backupState"],
+            entry.value,
             serde_json::Value::String("{\"command\":\"\",\"panelOpen\":false}".to_string())
         );
+        assert_eq!(entry.pref_type, PrefType::User);
     }
 
     #[test]
@@ -746,10 +731,15 @@ mod tests {
             r#"user_pref("browser.pageActions.persistedActions", "{\"ids\":[\"bookmark\"]}");"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
+        let entry = result
+            .iter()
+            .find(|e| e.key == "browser.pageActions.persistedActions")
+            .unwrap();
         assert_eq!(
-            result["browser.pageActions.persistedActions"],
+            entry.value,
             serde_json::Value::String("{\"ids\":[\"bookmark\"]}".to_string())
         );
+        assert_eq!(entry.pref_type, PrefType::User);
     }
 
     #[test]
@@ -757,10 +747,15 @@ mod tests {
         let input = r#"user_pref("toolkit.telemetry.cachedClientID", "c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0");"#;
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
+        let entry = result
+            .iter()
+            .find(|e| e.key == "toolkit.telemetry.cachedClientID")
+            .unwrap();
         assert_eq!(
-            result["toolkit.telemetry.cachedClientID"],
+            entry.value,
             serde_json::Value::String("c0ffeec0-ffee-c0ff-eec0-ffeec0ffeec0".to_string())
         );
+        assert_eq!(entry.pref_type, PrefType::User);
     }
 
     #[test]
@@ -769,7 +764,7 @@ mod tests {
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(
-            result["test"],
+            result.iter().find(|e| e.key == "test").unwrap().value,
             serde_json::Value::String("value\x08with\x08backspace".to_string())
         );
     }
@@ -780,7 +775,7 @@ mod tests {
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(
-            result["test"],
+            result.iter().find(|e| e.key == "test").unwrap().value,
             serde_json::Value::String("value\x0cform\x0cfeed".to_string())
         );
     }
@@ -791,7 +786,7 @@ mod tests {
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(
-            result["test"],
+            result.iter().find(|e| e.key == "test").unwrap().value,
             serde_json::Value::String("null\x00character".to_string())
         );
     }
@@ -802,7 +797,7 @@ mod tests {
         let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(
-            result["test"],
+            result.iter().find(|e| e.key == "test").unwrap().value,
             serde_json::Value::String("\x08\x0c\x00".to_string())
         );
     }
@@ -814,12 +809,12 @@ mod tests {
         assert!(result.is_err());
     }
 
-    // Tests for parse_prefs_js_with_types
+    // Tests for parse_prefs_js
 
     #[test]
     fn test_parse_user_pref_with_type() {
         let input = r#"user_pref("browser.startup.homepage", "https://example.com");"#;
-        let result = parse_prefs_js_with_types(input).unwrap();
+        let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
         let entry = result
             .iter()
@@ -836,7 +831,7 @@ mod tests {
     #[test]
     fn test_parse_default_pref_with_type() {
         let input = r#"pref("javascript.enabled", true);"#;
-        let result = parse_prefs_js_with_types(input).unwrap();
+        let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
         let entry = result
             .iter()
@@ -850,7 +845,7 @@ mod tests {
     #[test]
     fn test_parse_locked_pref_with_type() {
         let input = r#"lock_pref("network.proxy.type", 1);"#;
-        let result = parse_prefs_js_with_types(input).unwrap();
+        let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
         let entry = result
             .iter()
@@ -869,7 +864,7 @@ mod tests {
     #[test]
     fn test_parse_sticky_pref_with_type() {
         let input = r#"sticky_pref("test.pref", "sticky value");"#;
-        let result = parse_prefs_js_with_types(input).unwrap();
+        let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 1);
         let entry = result.iter().find(|e| e.key == "test.pref").unwrap();
         assert_eq!(entry.key, "test.pref");
@@ -888,7 +883,7 @@ mod tests {
             lock_pref("locked.pref", "value3");
             sticky_pref("sticky.pref", "value4");
         "#;
-        let result = parse_prefs_js_with_types(input).unwrap();
+        let result = parse_prefs_js(input).unwrap();
         assert_eq!(result.len(), 4);
 
         let user_entry = result.iter().find(|e| e.key == "user.pref").unwrap();
@@ -911,7 +906,7 @@ mod tests {
     #[test]
     fn test_parse_unknown_pref_function_error() {
         let input = r#"unknown_pref("test", "value");"#;
-        let result = parse_prefs_js_with_types(input);
+        let result = parse_prefs_js(input);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("Unknown pref function"));

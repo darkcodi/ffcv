@@ -5,7 +5,7 @@
 //! # Example
 //!
 //! ```rust
-//! use ffcv::{parse_prefs_js, query_preferences};
+//! use ffcv::{parse_prefs_js, query_preferences, PrefEntry, PrefType};
 //!
 //! let content = r#"
 //!     user_pref("network.proxy.http", "proxy.example.com");
@@ -13,14 +13,14 @@
 //!     user_pref("browser.startup.homepage", "https://example.com");
 //! "#;
 //!
-//! let config = parse_prefs_js(content)?;
-//! let network_prefs = query_preferences(&config, &["network.*"])?;
+//! let prefs = parse_prefs_js(content)?;
+//! let network_prefs = query_preferences(&prefs, &["network.*"])?;
 //! assert_eq!(network_prefs.len(), 2);
 //! # Ok::<(), ffcv::Error>(())
 //! ```
 
 use crate::error::{Error, Result};
-use crate::types::Config;
+use crate::types::PrefEntry;
 use glob::Pattern;
 
 /// Query configuration preferences by glob patterns (OR logic)
@@ -30,24 +30,33 @@ use glob::Pattern;
 ///
 /// # Arguments
 ///
-/// * `preferences` - The configuration map to query
+/// * `preferences` - Slice of preference entries to query
 /// * `patterns` - Slice of glob patterns to match against (OR logic)
 ///
 /// # Example
 ///
 /// ```rust
-/// use ffcv::query_preferences;
+/// use ffcv::{query_preferences, PrefEntry, PrefType};
 /// use serde_json::json;
 ///
-/// let mut config = std::collections::HashMap::new();
-/// config.insert("network.proxy.http".to_string(), json!("proxy.example.com"));
-/// config.insert("browser.startup.homepage".to_string(), json!("https://example.com"));
+/// let prefs = vec![
+///     PrefEntry {
+///         key: "network.proxy.http".to_string(),
+///         value: json!("proxy.example.com"),
+///         pref_type: PrefType::User,
+///     },
+///     PrefEntry {
+///         key: "browser.startup.homepage".to_string(),
+///         value: json!("https://example.com"),
+///         pref_type: PrefType::User,
+///     },
+/// ];
 ///
-/// let network_prefs = query_preferences(&config, &["network.*"])?;
+/// let network_prefs = query_preferences(&prefs, &["network.*"])?;
 /// assert_eq!(network_prefs.len(), 1);
 /// # Ok::<(), ffcv::Error>(())
 /// ```
-pub fn query_preferences(preferences: &Config, patterns: &[&str]) -> Result<Config> {
+pub fn query_preferences(preferences: &[PrefEntry], patterns: &[&str]) -> Result<Vec<PrefEntry>> {
     // Compile all patterns first to fail fast on invalid patterns
     let compiled_patterns: Vec<Pattern> = patterns
         .iter()
@@ -58,20 +67,16 @@ pub fn query_preferences(preferences: &Config, patterns: &[&str]) -> Result<Conf
         })
         .collect::<Result<Vec<_>>>()?;
 
-    // Query preferences: keep if ANY pattern matches
-    // First count matching entries to pre-allocate HashMap capacity
-    let matching_count = preferences
+    // Filter preferences: keep if ANY pattern matches
+    let queried: Vec<PrefEntry> = preferences
         .iter()
-        .filter(|(key, _)| compiled_patterns.iter().any(|pattern| pattern.matches(key)))
-        .count();
-
-    // Pre-allocate HashMap with exact capacity to avoid reallocations
-    let mut queried = Config::with_capacity(matching_count);
-    for (key, value) in preferences.iter() {
-        if compiled_patterns.iter().any(|pattern| pattern.matches(key)) {
-            queried.insert(key.clone(), value.clone());
-        }
-    }
+        .filter(|entry| {
+            compiled_patterns
+                .iter()
+                .any(|pattern| pattern.matches(&entry.key))
+        })
+        .cloned()
+        .collect();
 
     Ok(queried)
 }
@@ -79,25 +84,37 @@ pub fn query_preferences(preferences: &Config, patterns: &[&str]) -> Result<Conf
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::PrefType;
     use serde_json::Value;
 
-    fn create_test_config() -> Config {
-        let mut config = Config::new();
-        config.insert("network.proxy.type".to_string(), Value::Number(1.into()));
-        config.insert(
-            "network.cookie.cookieBehavior".to_string(),
-            Value::Number(0.into()),
-        );
-        config.insert(
-            "browser.startup.homepage".to_string(),
-            Value::String("https://example.com".to_string()),
-        );
-        config.insert(
-            "browser.search.region".to_string(),
-            Value::String("US".to_string()),
-        );
-        config.insert("javascript.enabled".to_string(), Value::Bool(true));
-        config
+    fn create_test_config() -> Vec<PrefEntry> {
+        vec![
+            PrefEntry {
+                key: "network.proxy.type".to_string(),
+                value: Value::Number(1.into()),
+                pref_type: PrefType::User,
+            },
+            PrefEntry {
+                key: "network.cookie.cookieBehavior".to_string(),
+                value: Value::Number(0.into()),
+                pref_type: PrefType::User,
+            },
+            PrefEntry {
+                key: "browser.startup.homepage".to_string(),
+                value: Value::String("https://example.com".to_string()),
+                pref_type: PrefType::User,
+            },
+            PrefEntry {
+                key: "browser.search.region".to_string(),
+                value: Value::String("US".to_string()),
+                pref_type: PrefType::User,
+            },
+            PrefEntry {
+                key: "javascript.enabled".to_string(),
+                value: Value::Bool(true),
+                pref_type: PrefType::Default,
+            },
+        ]
     }
 
     #[test]
@@ -105,8 +122,10 @@ mod tests {
         let config = create_test_config();
         let queried = query_preferences(&config, &["network.*"]).unwrap();
         assert_eq!(queried.len(), 2);
-        assert!(queried.contains_key("network.proxy.type"));
-        assert!(queried.contains_key("network.cookie.cookieBehavior"));
+        assert!(queried.iter().any(|e| e.key == "network.proxy.type"));
+        assert!(queried
+            .iter()
+            .any(|e| e.key == "network.cookie.cookieBehavior"));
     }
 
     #[test]
@@ -114,9 +133,11 @@ mod tests {
         let config = create_test_config();
         let queried = query_preferences(&config, &["network.*", "javascript.enabled"]).unwrap();
         assert_eq!(queried.len(), 3);
-        assert!(queried.contains_key("network.proxy.type"));
-        assert!(queried.contains_key("network.cookie.cookieBehavior"));
-        assert!(queried.contains_key("javascript.enabled"));
+        assert!(queried.iter().any(|e| e.key == "network.proxy.type"));
+        assert!(queried
+            .iter()
+            .any(|e| e.key == "network.cookie.cookieBehavior"));
+        assert!(queried.iter().any(|e| e.key == "javascript.enabled"));
     }
 
     #[test]
@@ -139,6 +160,6 @@ mod tests {
         let config = create_test_config();
         let queried = query_preferences(&config, &["javascript.enabled"]).unwrap();
         assert_eq!(queried.len(), 1);
-        assert!(queried.contains_key("javascript.enabled"));
+        assert!(queried.iter().any(|e| e.key == "javascript.enabled"));
     }
 }

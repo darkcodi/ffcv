@@ -26,26 +26,11 @@
 //!     lock_pref("security.default_ssl_enabled", false);
 //! "#;
 //!
-//! let config = parse_prefs_js(content)?;
-//! assert_eq!(config["browser.startup.homepage"], "https://example.com");
-//! assert_eq!(config["javascript.enabled"], true);
-//! # Ok::<(), ffcv::Error>(())
-//! ```
-//!
-//! ### Parsing with Type Information
-//!
-//! ```rust
-//! use ffcv::{parse_prefs_js_with_types, PrefType};
-//!
-//! let content = r#"
-//!     user_pref("browser.startup.homepage", "https://example.com");
-//!     pref("javascript.enabled", true);
-//! "#;
-//!
-//! let prefs = parse_prefs_js_with_types(content)?;
+//! let prefs = parse_prefs_js(content)?;
 //! let homepage = prefs.iter()
 //!     .find(|e| e.key == "browser.startup.homepage")
 //!     .unwrap();
+//! assert_eq!(homepage.value, "https://example.com");
 //! assert_eq!(homepage.pref_type, PrefType::User);
 //! # Ok::<(), ffcv::Error>(())
 //! ```
@@ -61,7 +46,7 @@
 //!
 //! // Read and parse preferences
 //! let content = std::fs::read_to_string(&prefs_path)?;
-//! let config = parse_prefs_js(&content)?;
+//! let prefs = parse_prefs_js(&content)?;
 //! # Ok::<(), ffcv::Error>(())
 //! ```
 //!
@@ -91,11 +76,11 @@
 //!     user_pref("browser.startup.homepage", "https://example.com");
 //! "#;
 //!
-//! let config = parse_prefs_js(content)?;
-//! let network_prefs = query_preferences(&config, &["network.*"])?;
+//! let prefs = parse_prefs_js(content)?;
+//! let network_prefs = query_preferences(&prefs, &["network.*"])?;
 //!
 //! assert_eq!(network_prefs.len(), 2);
-//! assert!(network_prefs.contains_key("network.proxy.http"));
+//! assert!(network_prefs.iter().any(|e| e.key == "network.proxy.http"));
 //! # Ok::<(), ffcv::Error>(())
 //! ```
 //!
@@ -150,7 +135,7 @@
 
 // Re-export core types at crate root for convenient access
 pub use profile::ProfileInfo;
-pub use types::{Config, ConfigEntry, PrefEntry, PrefType};
+pub use types::{ConfigEntry, PrefEntry, PrefType};
 
 // Re-export documentation function
 pub use types::get_preference_explanation;
@@ -164,7 +149,7 @@ pub mod profile;
 pub mod query;
 
 // Re-export key functions at crate level for ergonomic API
-pub use parser::{parse_prefs_js, parse_prefs_js_with_types};
+pub use parser::parse_prefs_js;
 pub use profile::{find_profile_path, get_prefs_path, list_profiles};
 pub use query::query_preferences;
 
