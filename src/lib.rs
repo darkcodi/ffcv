@@ -84,16 +84,6 @@
 //! # Ok::<(), ffcv::Error>(())
 //! ```
 //!
-//! ### Getting Preference Explanations
-//!
-//! ```rust
-//! use ffcv::get_preference_explanation;
-//!
-//! if let Some(explanation) = get_preference_explanation("javascript.enabled") {
-//!     println!("javascript.enabled: {}", explanation);
-//! }
-//! ```
-//!
 //! ## Preference Types
 //!
 //! Firefox supports four preference types, indicated by the function name used:
@@ -136,9 +126,6 @@
 // Re-export core types at crate root for convenient access
 pub use profile::ProfileInfo;
 pub use types::{PrefEntry, PrefType};
-
-// Re-export documentation function
-pub use types::get_preference_explanation;
 
 // Re-export error types
 pub use error::{Error, Result};

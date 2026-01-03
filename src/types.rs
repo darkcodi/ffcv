@@ -5,9 +5,6 @@
 
 use serde::{Deserialize, Serialize};
 
-// Re-export the explanation function for convenience
-pub use crate::explanations::get_preference_explanation;
-
 /// Firefox preference types
 ///
 /// Firefox supports four different preference types, indicated by which

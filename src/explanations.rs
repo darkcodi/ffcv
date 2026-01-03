@@ -1506,25 +1506,3 @@ pub(crate) fn get_preference_explanation_static(key: &str) -> Option<&'static st
         .get(key)
         .copied()
 }
-
-/// Get explanation for a preference key
-///
-/// Returns `Some` with the explanation text if available, otherwise returns `None`.
-///
-/// # Arguments
-/// * `key` - The preference key to look up (e.g., "javascript.enabled")
-///
-/// # Returns
-/// `Some(String)` containing the explanation, or `None` if not found
-///
-/// # Example
-/// ```rust
-/// use ffcv::get_preference_explanation;
-///
-/// if let Some(explanation) = get_preference_explanation("javascript.enabled") {
-///     assert!(explanation.contains("JavaScript"));
-/// }
-/// ```
-pub fn get_preference_explanation(key: &str) -> Option<String> {
-    get_preference_explanation_static(key).map(|s| s.to_string())
-}

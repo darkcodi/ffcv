@@ -134,15 +134,12 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
     if let Some(get_key) = params.get {
         if let Some(entry) = preferences.iter().find(|e| e.key == get_key) {
             // Check unexplained-only flag
-            if params.unexplained_only {
-                let has_explanation = ffcv::get_preference_explanation(&entry.key).is_some();
-                if has_explanation {
-                    return Err(anyhow::anyhow!(
-                        "Preference '{}' has an explanation, but --unexplained-only was specified",
-                        get_key
-                    )
-                    .into());
-                }
+            if params.unexplained_only && entry.explanation.is_some() {
+                return Err(anyhow::anyhow!(
+                    "Preference '{}' has an explanation, but --unexplained-only was specified",
+                    get_key
+                )
+                .into());
             }
             output_raw_value(&entry.value)?;
             return Ok(());
@@ -163,7 +160,7 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
     if params.unexplained_only {
         output_prefs.retain(|entry| {
             // Keep only preferences that don't have explanations
-            ffcv::get_preference_explanation(&entry.key).is_none()
+            entry.explanation.is_none()
         });
     }
 
