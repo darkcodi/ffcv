@@ -139,25 +139,25 @@
 //! - [Firefox preferences documentation](https://support.mozilla.org/en-US/kb/about-config-editor-firefox)
 //! - [prefs.js format reference](https://searchfox.org/mozilla-central/source/modules/libpref/parser/src/lib.rs)
 
-// Re-export core types at crate root for convenient access
-pub use profile::ProfileInfo;
+// Re-export all public types at crate root
 pub use types::{PrefEntry, PrefType, PrefValue, PrefValueExt};
 
 // Re-export error types
 pub use error::{Error, Result};
 
-// Public modules
-pub mod parser;
-pub mod profile;
-pub mod query;
+// Re-export profile types
+pub use profile::ProfileInfo;
 
-// Re-export key functions at crate level for ergonomic API
+// Re-export all public functions at crate root
 pub use parser::{parse_prefs_js, parse_prefs_js_file};
 pub use profile::{find_profile_path, get_prefs_path, list_profiles};
 pub use query::query_preferences;
 
-// Internal modules (private)
+// All modules are private - use re-exports above for public API
 mod error;
 mod explanations;
 mod lexer;
+mod parser;
+mod profile;
+mod query;
 mod types;

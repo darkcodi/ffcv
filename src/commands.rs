@@ -1,8 +1,9 @@
 use crate::cli;
-use ffcv::profile::{find_profile_path, get_prefs_path, list_profiles as list_profiles_impl};
-use ffcv::query;
 use ffcv::PrefValue;
 use ffcv::PrefValueExt;
+use ffcv::{
+    find_profile_path, get_prefs_path, list_profiles as list_profiles_impl, query_preferences,
+};
 
 /// Configuration parameters for viewing Firefox configuration
 pub struct ViewConfigParams<'a> {
@@ -118,19 +119,18 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
     };
 
     // Parse preferences (always returns Vec<PrefEntry> with types)
-    let preferences: Vec<ffcv::PrefEntry> =
-        ffcv::parser::parse_prefs_js(&content).map_err(|e| {
-            let source_hint = if params.stdin {
-                "from stdin"
-            } else {
-                "from prefs.js file"
-            };
-            anyhow::anyhow!(
-                "Failed to parse preferences {}: {}. The input may be malformed.",
-                source_hint,
-                e
-            )
-        })?;
+    let preferences: Vec<ffcv::PrefEntry> = ffcv::parse_prefs_js(&content).map_err(|e| {
+        let source_hint = if params.stdin {
+            "from stdin"
+        } else {
+            "from prefs.js file"
+        };
+        anyhow::anyhow!(
+            "Failed to parse preferences {}: {}. The input may be malformed.",
+            source_hint,
+            e
+        )
+    })?;
 
     // Handle --get mode: single preference retrieval with raw output
     if let Some(get_key) = params.get {
@@ -152,7 +152,7 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
 
     // Apply queries if provided
     let mut output_prefs = if !params.query_patterns.is_empty() {
-        query::query_preferences(&preferences, params.query_patterns)
+        query_preferences(&preferences, params.query_patterns)
             .map_err(|e| anyhow::anyhow!("Failed to apply query: {}", e))?
     } else {
         preferences.clone()
@@ -264,7 +264,7 @@ mod tests {
             sticky_pref("sticky.pref", "value4");
         "#;
 
-        let mut array_output = ffcv::parser::parse_prefs_js(input).unwrap();
+        let mut array_output = ffcv::parse_prefs_js(input).unwrap();
 
         // Sort to match production code behavior
         array_output.sort_by(|a, b| a.key.cmp(&b.key));
@@ -414,7 +414,7 @@ mod tests {
             user_pref("browser.startup.homepage", "https://example.com");
         "#;
 
-        let mut array_output = ffcv::parser::parse_prefs_js(input).unwrap();
+        let mut array_output = ffcv::parse_prefs_js(input).unwrap();
 
         // Sort to match production code behavior
         array_output.sort_by(|a, b| a.key.cmp(&b.key));
@@ -455,7 +455,7 @@ mod tests {
             user_pref("banana.pref", "value3");
         "#;
 
-        let prefs = ffcv::parser::parse_prefs_js(input).unwrap();
+        let prefs = ffcv::parse_prefs_js(input).unwrap();
 
         // Create JSON object output using BTreeMap
         let json_map: std::collections::BTreeMap<String, serde_json::Value> = prefs
