@@ -168,8 +168,8 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
 
     let json = match params.output_type {
         cli::OutputType::JsonObject => {
-            // Convert Vec<PrefEntry> to HashMap for JSON object output
-            let json_map: std::collections::HashMap<String, serde_json::Value> = output_prefs
+            // Convert Vec<PrefEntry> to BTreeMap for JSON object output (sorted by key)
+            let json_map: std::collections::BTreeMap<String, serde_json::Value> = output_prefs
                 .iter()
                 .map(|entry| (entry.key.clone(), entry.value.to_json_value()))
                 .collect();
@@ -206,6 +206,7 @@ fn output_raw_value(value: &PrefValue) -> Result<(), Box<dyn std::error::Error>>
 mod tests {
     use ffcv::PrefType;
     use ffcv::PrefValue;
+    use ffcv::PrefValueExt;
 
     /// Helper function to test the output formatting logic
     fn format_value(value: &PrefValue) -> String {
@@ -443,6 +444,32 @@ mod tests {
             .as_object()
             .unwrap();
         assert!(!homepage_entry.contains_key("explanation"));
+    }
+
+    #[test]
+    fn test_json_object_output_sorted_alphabetically() {
+        // Test that JSON object output maintains alphabetical key order
+        let input = r#"
+            user_pref("zebra.pref", "value1");
+            user_pref("apple.pref", "value2");
+            user_pref("banana.pref", "value3");
+        "#;
+
+        let prefs = ffcv::parser::parse_prefs_js(input).unwrap();
+
+        // Create JSON object output using BTreeMap
+        let json_map: std::collections::BTreeMap<String, serde_json::Value> = prefs
+            .iter()
+            .map(|entry| (entry.key.clone(), entry.value.to_json_value()))
+            .collect();
+
+        let json_str = serde_json::to_string_pretty(&json_map).unwrap();
+        let parsed: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&json_str).unwrap();
+
+        // Verify keys are in alphabetical order
+        let keys: Vec<&String> = parsed.keys().collect();
+        assert_eq!(keys, vec!["apple.pref", "banana.pref", "zebra.pref"]);
     }
 
     #[test]
