@@ -2,9 +2,10 @@
 name = "ffcv"
 version = "0.1.0"
 edition = "2021"
+authors = ["darkcodi <trooper982@gmail.com>"]
 description = "Firefox Configuration Viewer - Parse and query Firefox preference files"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/yourusername/ffcv"
+repository = "https://github.com/darkcodi/ffcv"
 keywords = ["firefox", "preferences", "config", "parser"]
 categories = ["parser-implementations", "config"]
 
