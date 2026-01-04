@@ -472,6 +472,13 @@ pub fn list_profiles(profiles_dir_opt: Option<&std::path::Path>) -> Result<Vec<P
     let profile_infos: Vec<ProfileInfo> = profiles
         .into_iter()
         .map(|p| {
+            // Resolve relative paths to absolute paths
+            let full_path = if p.is_relative {
+                profiles_dir.join(&p.path)
+            } else {
+                p.path.clone()
+            };
+
             let path_string = p.path.to_string_lossy().to_string();
             let locked_to = installs
                 .iter()
@@ -480,7 +487,7 @@ pub fn list_profiles(profiles_dir_opt: Option<&std::path::Path>) -> Result<Vec<P
 
             ProfileInfo {
                 name: p.name,
-                path: p.path,
+                path: full_path,
                 is_default: p.is_default,
                 is_relative: p.is_relative,
                 locked_to_install: locked_to,
