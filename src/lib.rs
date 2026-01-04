@@ -53,7 +53,7 @@
 //!
 //! ### Working with Profiles
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ffcv::{find_profile_path, parse_prefs_js};
 //!
 //! // Find a specific Firefox profile
@@ -68,7 +68,7 @@
 //!
 //! ### Listing All Profiles
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ffcv::list_profiles;
 //!
 //! let profiles = list_profiles(None)?;

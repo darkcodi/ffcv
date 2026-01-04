@@ -6,7 +6,7 @@
 //!
 //! # Example
 //!
-//! ```rust
+//! ```rust,no_run
 //! use ffcv::{find_profile_path, list_profiles};
 //!
 //! // List all available Firefox profiles
@@ -57,7 +57,7 @@ pub struct ProfileInfo {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,no_run
 /// use ffcv::find_profile_path;
 ///
 /// let profile_path = find_profile_path("default", None)?;
