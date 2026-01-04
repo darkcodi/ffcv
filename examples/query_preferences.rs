@@ -74,10 +74,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// Simple glob pattern matching
 fn glob_match(pattern: &str, text: &str) -> bool {
     // Convert glob pattern to regex
-    let regex_pattern = pattern
-        .replace('.', r"\.")
-        .replace('*', ".*")
-        .replace('?', ".");
+    // In glob patterns: * matches any characters, ? matches single character
+    // Dots are literal dots (not regex wildcards)
+    let regex_pattern = pattern.replace('*', ".*").replace('?', ".");
 
     // Simple matching - check if text matches the pattern
     let parts: Vec<&str> = regex_pattern.split(".*").collect();
