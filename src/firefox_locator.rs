@@ -45,6 +45,8 @@ const FIREFOX_SEARCH_PATHS: &[&str] = &[
 const NIX_STORE_PATHS: &[&str] = &[
     "/nix/var/nix/profiles/default/bin/firefox",
     "/run/current-system/sw/bin/firefox",
+    // User-specific profile paths (we'll search /etc/profiles too)
+    "/etc/profiles",
 ];
 
 /// Find the first valid Firefox installation on the system
@@ -282,17 +284,98 @@ fn get_all_search_paths() -> Vec<String> {
     #[cfg(target_os = "linux")]
     {
         for nix_path in NIX_STORE_PATHS {
-            // Check if nix path is a symlink to a real installation
-            if let Ok(target) = fs::read_link(nix_path) {
-                // Get the parent nix store directory
-                if let Some(store_dir) = target.parent() {
-                    paths.push(store_dir.to_string_lossy().to_string());
+            let nix_path_buf = PathBuf::from(nix_path);
+
+            // If it's a direct path to a firefox binary, resolve it
+            if nix_path_buf.exists() || nix_path_buf.is_symlink() {
+                if let Ok(canonical) = nix_path_buf.canonicalize() {
+                    // Check if it's a firefox binary
+                    if canonical.ends_with("firefox") || canonical.ends_with("firefox-bin") {
+                        // This is a binary, get the lib/firefox directory
+                        if let Some(bin_dir) = canonical.parent() {
+                            if let Some(store_base) = bin_dir.parent() {
+                                let lib_firefox = store_base.join("lib/firefox");
+                                if lib_firefox.exists() {
+                                    paths.push(lib_firefox.to_string_lossy().to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Also check if nix_path itself is a directory (like /etc/profiles)
+            // and try to find firefox binaries recursively
+            if nix_path_buf.is_dir() {
+                // Search recursively for firefox binaries (need depth 4 for /etc/profiles/per-user/USER/bin/firefox)
+                let entries = walk_dir_depth(&nix_path_buf, 4);
+                for entry in entries {
+                    if entry.ends_with("firefox") || entry.ends_with("firefox-bin") {
+                        if let Ok(canonical) = entry.canonicalize() {
+                            // Get the lib/firefox directory
+                            if let Some(bin_dir) = canonical.parent() {
+                                if let Some(store_base) = bin_dir.parent() {
+                                    let lib_firefox = store_base.join("lib/firefox");
+                                    if lib_firefox.exists() {
+                                        paths.push(lib_firefox.to_string_lossy().to_string());
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
+    // Deduplicate paths while preserving order
+    let mut seen = std::collections::HashSet::new();
+    paths.retain(|p| seen.insert(p.clone()));
+
     paths
+}
+
+/// Walk a directory up to a specified depth, collecting paths that end with "firefox"
+#[cfg(target_os = "linux")]
+fn walk_dir_depth(dir: &Path, max_depth: usize) -> Vec<PathBuf> {
+    let mut results = Vec::new();
+    let mut current_dirs = vec![dir.to_path_buf()];
+
+    for _depth in 0..max_depth {
+        let mut next_dirs = Vec::new();
+
+        for dir_path in &current_dirs {
+            if let Ok(entries) = fs::read_dir(dir_path) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    let file_name = path.file_name();
+
+                    // Check if this is a firefox binary
+                    let is_firefox = file_name.is_some() && {
+                        let name = file_name.unwrap().to_string_lossy();
+                        name == "firefox" || name == "firefox-bin"
+                    };
+
+                    // If it's a firefox binary, add it to results
+                    if is_firefox {
+                        results.push(path.clone());
+                    }
+
+                    // If it's a directory, add to next iteration
+                    if path.is_dir() {
+                        next_dirs.push(path);
+                    }
+                }
+            }
+        }
+
+        current_dirs = next_dirs;
+        if current_dirs.is_empty() {
+            break;
+        }
+    }
+
+    results
 }
 
 #[cfg(test)]
