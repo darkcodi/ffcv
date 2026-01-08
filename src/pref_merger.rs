@@ -6,7 +6,7 @@
 
 use crate::error::{Error, Result};
 use crate::firefox_locator;
-use crate::omni_extractor::OmniExtractor;
+use crate::omni_extractor::{ExtractConfig, OmniExtractor};
 use crate::parser::parse_prefs_js_file;
 use crate::types::{MergedPreferences, PrefEntry, PrefSource};
 use std::collections::HashMap;
@@ -252,7 +252,15 @@ fn load_builtin_preferences(
         }
     })?;
 
-    let extractor = OmniExtractor::new(omni_path.clone())?;
+    // Only extract preference files, not all JavaScript files
+    let config = ExtractConfig {
+        target_files: vec![
+            "defaults/preferences/*.js".to_string(),
+            "defaults/pref/*.js".to_string(),
+        ],
+        ..Default::default()
+    };
+    let extractor = OmniExtractor::with_config(omni_path.clone(), config)?;
     let extracted_files = extractor.extract_prefs()?;
 
     let mut all_prefs = Vec::new();
