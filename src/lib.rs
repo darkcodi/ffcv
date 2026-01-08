@@ -8,10 +8,13 @@
 //! ## Features
 //!
 //! - Parse Firefox prefs.js files with full JavaScript escape sequence support
-//! - Detect and manage Firefox profiles across platforms (Linux, macOS, Windows)
+//! - Extract and merge Firefox's built-in default preferences from omni.ja archives
+//! - Auto-discover Firefox installations across platforms (Linux, macOS, Windows)
+//! - Detect and manage Firefox profiles across platforms
 //! - Query preferences using glob patterns (e.g., `"network.*"`, `"browser.*.enabled"`)
 //! - Get human-readable explanations for documented preferences
 //! - Support for all four preference types: user, default, locked, and sticky
+//! - Track preference sources (built-in, global defaults, user-modified)
 //!
 //! ## Quick Start
 //!
@@ -100,6 +103,70 @@
 //! # Ok::<(), ffcv::Error>(())
 //! ```
 //!
+//! ### Firefox Installation Discovery
+//!
+//! ```rust,no_run
+//! use ffcv::find_firefox_installation;
+//!
+//! // Auto-detect Firefox installation on your system
+//! match find_firefox_installation()? {
+//!     Some(installation) => {
+//!         println!("Firefox found at: {}", installation.path.display());
+//!         println!("Version: {}", installation.version);
+//!         println!("Has omni.ja: {}", installation.has_omni_ja);
+//!     }
+//!     None => println!("No Firefox installation found"),
+//! }
+//! # Ok::<(), ffcv::Error>(())
+//! ```
+//!
+//! ### Merging All Preference Sources
+//!
+//! ```rust,no_run
+//! use ffcv::{merge_all_preferences, find_profile_path, MergeConfig};
+//!
+//! let profile_path = find_profile_path("default-release", None)?;
+//!
+//! let config = MergeConfig {
+//!     include_builtins: true,   // Include omni.ja defaults
+//!     include_globals: true,    // Include greprefs.js
+//!     include_user: true,       // Include user prefs.js
+//!     continue_on_error: true,  // Don't fail if some sources are missing
+//! };
+//!
+//! let merged = merge_all_preferences(&profile_path, None, &config)?;
+//!
+//! println!("Loaded {} preferences from {} sources",
+//!     merged.entries.len(),
+//!     merged.loaded_sources.len()
+//! );
+//!
+//! // Display warnings for any missing sources
+//! for warning in &merged.warnings {
+//!     eprintln!("Warning: {}", warning);
+//! }
+//! # Ok::<(), ffcv::Error>(())
+//! ```
+//!
+//! ### Filtering User-Modified Preferences
+//!
+//! ```rust,no_run
+//! use ffcv::{merge_all_preferences, find_profile_path, MergeConfig, PrefSource};
+//!
+//! let profile_path = find_profile_path("default-release", None)?;
+//! let config = MergeConfig::default();
+//! let merged = merge_all_preferences(&profile_path, None, &config)?;
+//!
+//! // Get only user-modified preferences (exclude built-ins)
+//! let user_modified: Vec<_> = merged.entries
+//!     .iter()
+//!     .filter(|p| p.source == Some(PrefSource::User))
+//!     .collect();
+//!
+//! println!("You've modified {} preferences", user_modified.len());
+//! # Ok::<(), ffcv::Error>(())
+//! ```
+//!
 //! ## Preference Types
 //!
 //! Firefox supports four preference types, indicated by the function name used:
@@ -140,7 +207,10 @@
 //! - [prefs.js format reference](https://searchfox.org/mozilla-central/source/modules/libpref/parser/src/lib.rs)
 
 // Re-export all public types at crate root
-pub use types::{PrefEntry, PrefType, PrefValue, PrefValueExt};
+pub use types::{
+    FirefoxInstallation, MergedPreferences, PrefEntry, PrefSource, PrefType, PrefValue,
+    PrefValueExt,
+};
 
 // Re-export error types
 pub use error::{Error, Result};
@@ -153,11 +223,25 @@ pub use parser::{parse_prefs_js, parse_prefs_js_file};
 pub use profile::{find_profile_path, get_prefs_path, list_profiles};
 pub use query::query_preferences;
 
+// Re-export Firefox locator
+pub use firefox_locator::{
+    find_all_firefox_installations, find_firefox_installation, get_firefox_version,
+};
+
+// Re-export omni_extractor
+pub use omni_extractor::{ExtractConfig, OmniExtractor, DEFAULT_MAX_OMNI_SIZE};
+
+// Re-export pref_merger
+pub use pref_merger::{get_effective_pref, merge_all_preferences, MergeConfig};
+
 // All modules are private - use re-exports above for public API
 mod error;
 mod explanations;
+mod firefox_locator;
 mod lexer;
+mod omni_extractor;
 mod parser;
+mod pref_merger;
 mod profile;
 mod query;
 mod types;

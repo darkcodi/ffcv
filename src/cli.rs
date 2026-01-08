@@ -23,6 +23,21 @@ pub enum Commands {
         profiles_dir: Option<std::path::PathBuf>,
     },
 
+    /// List Firefox installations
+    Install {
+        /// Path to Firefox profiles directory (overrides auto-detection)
+        #[arg(short = 'd', long = "profiles-dir")]
+        profiles_dir: Option<std::path::PathBuf>,
+
+        /// List all Firefox installations (default: first found)
+        #[arg(long)]
+        all: bool,
+
+        /// Verbose output
+        #[arg(long)]
+        verbose: bool,
+    },
+
     /// View Firefox configuration for a profile
     Config {
         /// Firefox profile name (default: "default")
@@ -37,8 +52,12 @@ pub enum Commands {
         #[arg(short = 'd', long = "profiles-dir")]
         profiles_dir: Option<std::path::PathBuf>,
 
-        /// Maximum file size in bytes (default: 10MB)
-        #[arg(long = "max-file-size", default_value = "10485760")]
+        /// Path to Firefox installation directory (overrides auto-detection)
+        #[arg(long = "install-dir")]
+        install_dir: Option<std::path::PathBuf>,
+
+        /// Maximum file size in bytes (default: 100MB for omni.ja, 10MB for prefs.js)
+        #[arg(long = "max-file-size", default_value = "104857600")]
         max_file_size: usize,
 
         /// Query preferences by glob pattern (e.g., "network.*", "browser.*.enabled")
@@ -56,6 +75,10 @@ pub enum Commands {
             conflicts_with = "get"
         )]
         output_type: OutputType,
+
+        /// Show only user-modified preferences (exclude built-in defaults)
+        #[arg(long = "show-only-modified")]
+        show_only_modified: bool,
 
         /// Show only preferences without explanations (hidden flag)
         #[arg(long = "unexplained-only", hide = true)]

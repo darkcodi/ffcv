@@ -36,7 +36,7 @@ use glob::Pattern;
 /// # Example
 ///
 /// ```rust
-/// use ffcv::{query_preferences, PrefEntry, PrefType, PrefValue};
+/// use ffcv::{query_preferences, PrefEntry, PrefType, PrefValue, PrefSource};
 ///
 /// let prefs = vec![
 ///     PrefEntry {
@@ -44,12 +44,16 @@ use glob::Pattern;
 ///         value: PrefValue::String("proxy.example.com".to_string()),
 ///         pref_type: PrefType::User,
 ///         explanation: None,
+///         source: Some(PrefSource::User),
+///         source_file: Some("prefs.js".to_string()),
 ///     },
 ///     PrefEntry {
 ///         key: "browser.startup.homepage".to_string(),
 ///         value: PrefValue::String("https://example.com".to_string()),
 ///         pref_type: PrefType::User,
 ///         explanation: None,
+///         source: Some(PrefSource::User),
+///         source_file: Some("prefs.js".to_string()),
 ///     },
 /// ];
 ///
@@ -85,6 +89,7 @@ pub fn query_preferences(preferences: &[PrefEntry], patterns: &[&str]) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::PrefSource;
     use crate::types::{PrefType, PrefValue};
 
     fn create_test_config() -> Vec<PrefEntry> {
@@ -94,30 +99,40 @@ mod tests {
                 value: PrefValue::Integer(1),
                 pref_type: PrefType::User,
                 explanation: None,
+                source: Some(PrefSource::User),
+                source_file: Some("prefs.js".to_string()),
             },
             PrefEntry {
                 key: "network.cookie.cookieBehavior".to_string(),
                 value: PrefValue::Integer(0),
                 pref_type: PrefType::User,
                 explanation: None,
+                source: Some(PrefSource::User),
+                source_file: Some("prefs.js".to_string()),
             },
             PrefEntry {
                 key: "browser.startup.homepage".to_string(),
                 value: PrefValue::String("https://example.com".to_string()),
                 pref_type: PrefType::User,
                 explanation: None,
+                source: Some(PrefSource::User),
+                source_file: Some("prefs.js".to_string()),
             },
             PrefEntry {
                 key: "browser.search.region".to_string(),
                 value: PrefValue::String("US".to_string()),
                 pref_type: PrefType::User,
                 explanation: None,
+                source: Some(PrefSource::User),
+                source_file: Some("prefs.js".to_string()),
             },
             PrefEntry {
                 key: "javascript.enabled".to_string(),
                 value: PrefValue::Bool(true),
                 pref_type: PrefType::Default,
                 explanation: None,
+                source: Some(PrefSource::User),
+                source_file: Some("prefs.js".to_string()),
             },
         ]
     }

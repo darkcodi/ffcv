@@ -26,6 +26,8 @@ thiserror = "1.0"
 configparser = "3.0"
 cityhasher = "0.1"
 glob = "0.3"
+zip = "0.6"
+tempfile = "3"
+walkdir = "2"
 
 [dev-dependencies]
-tempfile = "3"

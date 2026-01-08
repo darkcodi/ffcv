@@ -2,7 +2,9 @@ use crate::cli;
 use ffcv::PrefValue;
 use ffcv::PrefValueExt;
 use ffcv::{
-    find_profile_path, get_prefs_path, list_profiles as list_profiles_impl, query_preferences,
+    find_all_firefox_installations, find_firefox_installation, find_profile_path,
+    list_profiles as list_profiles_impl, merge_all_preferences, query_preferences, MergeConfig,
+    PrefSource,
 };
 
 /// Configuration parameters for viewing Firefox configuration
@@ -10,10 +12,12 @@ pub struct ViewConfigParams<'a> {
     pub stdin: bool,
     pub profile_name: &'a str,
     pub profiles_dir_opt: Option<&'a std::path::Path>,
+    pub install_dir_opt: Option<&'a std::path::Path>,
     pub max_file_size: usize,
     pub query_patterns: &'a [&'a str],
     pub get: Option<String>,
     pub output_type: cli::OutputType,
+    pub show_only_modified: bool,
     pub unexplained_only: bool,
 }
 
@@ -30,6 +34,42 @@ pub fn list_profiles(
 
     let json = serde_json::to_string_pretty(&profiles)?;
     println!("{}", json);
+    Ok(())
+}
+
+/// List Firefox installations
+pub fn list_installations(all: bool, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let installations = if all {
+        find_all_firefox_installations()
+            .map_err(|e| anyhow::anyhow!("Failed to find Firefox installations: {}", e))?
+    } else {
+        match find_firefox_installation()
+            .map_err(|e| anyhow::anyhow!("Failed to find Firefox installation: {}", e))?
+        {
+            Some(install) => vec![install],
+            None => {
+                eprintln!("No Firefox installation found");
+                return Ok(());
+            }
+        }
+    };
+
+    if installations.is_empty() {
+        eprintln!("No Firefox installations found");
+        return Ok(());
+    }
+
+    // Format output based on verbosity
+    for install in installations {
+        if verbose {
+            println!("Firefox {} at {:?}", install.version, install.path);
+            println!("  omni.ja: {}", install.has_omni_ja);
+            println!("  greprefs.js: {}", install.has_greprefs);
+        } else {
+            println!("{:?} (Firefox {})", install.path, install.version);
+        }
+    }
+
     Ok(())
 }
 
@@ -58,83 +98,69 @@ fn read_stdin_content(max_file_size: usize) -> Result<String, Box<dyn std::error
     Ok(buffer)
 }
 
-/// Read preference content from file system
-fn read_file_content(
-    profile_name: &str,
-    profiles_dir_opt: Option<&std::path::Path>,
-    max_file_size: usize,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let profile_path = find_profile_path(profile_name, profiles_dir_opt).map_err(|e| {
+/// View configuration for a specific profile
+pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::Error>> {
+    // If stdin mode, use old behavior (only parse user prefs)
+    if params.stdin {
+        let content = read_stdin_content(params.max_file_size)?;
+
+        // Parse preferences (always returns Vec<PrefEntry> with types)
+        let preferences: Vec<ffcv::PrefEntry> = ffcv::parse_prefs_js(&content).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to parse preferences from stdin: {}. The input may be malformed.",
+                e
+            )
+        })?;
+
+        output_preferences(&preferences, &params)?;
+        return Ok(());
+    }
+
+    // Normal mode: merge all preference sources
+    let profile_path = find_profile_path(params.profile_name, params.profiles_dir_opt).map_err(|e| {
         anyhow::anyhow!(
             "Failed to find profile '{}': {}. Make sure Firefox is installed and the profile exists.\n\
              Use 'ffcv profile' to see available profiles.",
-            profile_name,
+            params.profile_name,
             e
         )
     })?;
 
-    let prefs_path = get_prefs_path(&profile_path);
-
-    // Check file size before reading to prevent DoS attacks
-    let metadata = std::fs::metadata(&prefs_path).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to read metadata for prefs.js at {}: {e}.",
-            prefs_path.display()
-        )
-    })?;
-
-    let file_size = metadata.len() as usize;
-    if file_size > max_file_size {
-        return Err(anyhow::anyhow!(
-            "File size exceeds maximum limit: {} bytes ({} MB) > {} bytes ({} MB). \
-             Use --max-file-size to increase the limit.",
-            file_size,
-            file_size / 1_048_576,
-            max_file_size,
-            max_file_size / 1_048_576
-        )
-        .into());
-    }
-
-    std::fs::read_to_string(&prefs_path).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to read prefs.js at {}: {e}. Make sure the file exists and is readable.",
-            prefs_path.display()
-        )
-        .into()
-    })
-}
-
-/// View configuration for a specific profile
-pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::Error>> {
-    // Read content from appropriate source (stdin or file)
-    let content = if params.stdin {
-        read_stdin_content(params.max_file_size)?
-    } else {
-        read_file_content(
-            params.profile_name,
-            params.profiles_dir_opt,
-            params.max_file_size,
-        )?
+    // Configure merge
+    let merge_config = MergeConfig {
+        include_builtins: !params.show_only_modified,
+        include_globals: !params.show_only_modified,
+        include_user: true,
+        continue_on_error: true,
     };
 
-    // Parse preferences (always returns Vec<PrefEntry> with types)
-    let preferences: Vec<ffcv::PrefEntry> = ffcv::parse_prefs_js(&content).map_err(|e| {
-        let source_hint = if params.stdin {
-            "from stdin"
-        } else {
-            "from prefs.js file"
-        };
-        anyhow::anyhow!(
-            "Failed to parse preferences {}: {}. The input may be malformed.",
-            source_hint,
-            e
-        )
-    })?;
+    // Merge all preferences
+    let merged = merge_all_preferences(&profile_path, params.install_dir_opt, &merge_config)
+        .map_err(|e| anyhow::anyhow!("Failed to merge preferences: {}", e))?;
+
+    // Display warnings
+    for warning in &merged.warnings {
+        eprintln!("Warning: {}", warning);
+    }
+
+    // Get preferences from merged result
+    let preferences = merged.entries;
+
+    output_preferences(&preferences, &params)?;
+
+    Ok(())
+}
+
+/// Output preferences based on configuration
+fn output_preferences(
+    preferences: &[ffcv::PrefEntry],
+    params: &ViewConfigParams,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut output_prefs = preferences.to_vec();
 
     // Handle --get mode: single preference retrieval with raw output
-    if let Some(get_key) = params.get {
-        if let Some(entry) = preferences.iter().find(|e| e.key == get_key) {
+    if let Some(ref get_key) = params.get {
+        if let Some(entry) = output_prefs.iter().find(|e| e.key == *get_key) {
             // Check unexplained-only flag
             if params.unexplained_only && entry.explanation.is_some() {
                 return Err(anyhow::anyhow!(
@@ -150,13 +176,19 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
         return Err(anyhow::anyhow!("Preference '{}' not found", get_key).into());
     }
 
+    // Apply --show-only-modified filter if flag is set
+    if params.show_only_modified {
+        output_prefs.retain(|entry| {
+            // Keep only user-set preferences
+            entry.source == Some(PrefSource::User)
+        });
+    }
+
     // Apply queries if provided
-    let mut output_prefs = if !params.query_patterns.is_empty() {
-        query_preferences(&preferences, params.query_patterns)
-            .map_err(|e| anyhow::anyhow!("Failed to apply query: {}", e))?
-    } else {
-        preferences.clone()
-    };
+    if !params.query_patterns.is_empty() {
+        output_prefs = query_preferences(&output_prefs, params.query_patterns)
+            .map_err(|e| anyhow::anyhow!("Failed to apply query: {}", e))?;
+    }
 
     // Apply unexplained-only filter if flag is set
     if params.unexplained_only {
@@ -169,6 +201,7 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
     let json = match params.output_type {
         cli::OutputType::JsonObject => {
             // Convert Vec<PrefEntry> to BTreeMap for JSON object output (sorted by key)
+            // Note: json-object does NOT include source or source_file
             let json_map: std::collections::BTreeMap<String, serde_json::Value> = output_prefs
                 .iter()
                 .map(|entry| (entry.key.clone(), entry.value.to_json_value()))
@@ -177,6 +210,7 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
         }
         cli::OutputType::JsonArray => {
             // Use Vec<PrefEntry> directly for array output
+            // Note: json-array DOES include source and source_file (full entry)
             let mut sorted_entries = output_prefs.clone();
 
             // Sort alphabetically by key for deterministic output order
@@ -227,6 +261,8 @@ mod tests {
             value: PrefValue::String("test value".to_string()),
             pref_type: PrefType::User,
             explanation: None,
+            source: Some(ffcv::PrefSource::User),
+            source_file: Some("prefs.js".to_string()),
         };
 
         let json_str = serde_json::to_string(&entry).unwrap();
@@ -384,6 +420,8 @@ mod tests {
             value: PrefValue::Bool(true),
             pref_type: PrefType::Default,
             explanation: Some("Master switch to enable or disable JavaScript execution."),
+            source: Some(ffcv::PrefSource::User),
+            source_file: Some("prefs.js".to_string()),
         };
 
         let json_str = serde_json::to_string(&entry).unwrap();
@@ -399,6 +437,8 @@ mod tests {
             value: PrefValue::String("test".to_string()),
             pref_type: PrefType::User,
             explanation: None,
+            source: Some(ffcv::PrefSource::User),
+            source_file: Some("prefs.js".to_string()),
         };
 
         let json_str = serde_json::to_string(&entry).unwrap();

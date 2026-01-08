@@ -35,7 +35,7 @@
 
 use crate::error::{Error, Result};
 use crate::lexer::{Lexer, Token};
-use crate::types::{PrefEntry, PrefType, PrefValue};
+use crate::types::{PrefEntry, PrefSource, PrefType, PrefValue};
 
 /// Parse the prefs.js file and extract all preferences
 ///
@@ -139,6 +139,8 @@ impl<'a> Parser<'a> {
                         value,
                         pref_type,
                         explanation,
+                        source: Some(PrefSource::User),
+                        source_file: Some("prefs.js".to_string()),
                     });
                 }
             }

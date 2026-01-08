@@ -16,6 +16,16 @@ ffcv is both a command-line tool and a Rust library for working with Firefox's `
   - Default preferences (`pref`)
   - Locked preferences (`lock_pref`)
   - Sticky preferences (`sticky_pref`)
+- **Firefox Default Preferences** - Extract and merge Firefox's built-in default preferences from omni.ja:
+  - Built-in defaults from omni.ja archives
+  - Global defaults from greprefs.js
+  - User preferences from prefs.js
+  - Proper precedence handling (built-ins < globals < user)
+  - Source tracking for each preference
+- **Firefox Installation Discovery** - Automatic Firefox installation detection:
+  - Cross-platform support (Linux, macOS, Windows)
+  - Multiple Firefox version support (ESR, Release, Beta)
+  - Version detection from application.ini
 - **Powerful Querying** - Filter preferences using glob patterns like `"network.*"` or `"browser.*.enabled"`
 - **Cross-Platform** - Automatic Firefox profile discovery on Linux, macOS, and Windows
 - **Rich Data Types** - Supports boolean, integer, float, string, and null values
@@ -58,10 +68,23 @@ ffcv profile
 ffcv profile --profiles-dir /custom/path
 ```
 
+### List Firefox Installations
+
+```bash
+# List detected Firefox installations
+ffcv install
+
+# List all Firefox installations (including multiple versions)
+ffcv install --all
+
+# Show detailed information about each installation
+ffcv install --all --verbose
+```
+
 ### View Configuration
 
 ```bash
-# View all preferences for the default profile
+# View all preferences (includes Firefox defaults by default)
 ffcv config
 
 # View preferences for a specific profile
@@ -74,11 +97,20 @@ ffcv config --query "browser.*" --query "extensions.*"
 # Get a single preference (raw output)
 ffcv config --get "network.proxy.type"
 
+# View only user-modified preferences (exclude built-ins and globals)
+ffcv config --show-only-modified
+
+# Specify custom Firefox installation directory
+ffcv config --install-dir /usr/lib/firefox
+
 # Read from stdin
 cat prefs.js | ffcv config --stdin
 
-# Output as JSON array
+# Output as JSON (includes source information)
 ffcv config --output-type json-array
+
+# Output as simple JSON object (no source information)
+ffcv config --output-type json-object
 ```
 
 ## Library Usage
@@ -141,6 +173,58 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+### Firefox Installation Discovery
+
+```rust
+use ffcv::find_firefox_installation;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(installation) = find_firefox_installation()? {
+        println!("Firefox found at: {}", installation.path.display());
+        println!("Version: {}", installation.version);
+        println!("Has omni.ja: {}", installation.has_omni_ja);
+        println!("Has greprefs.js: {}", installation.has_greprefs);
+    } else {
+        println!("No Firefox installation found");
+    }
+
+    Ok(())
+}
+```
+
+### Merge All Preferences
+
+```rust
+use ffcv::{merge_all_preferences, MergeConfig};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = MergeConfig {
+        include_builtins: true,   // Include omni.ja defaults
+        include_globals: true,    // Include greprefs.js
+        include_user: true,       // Include user prefs.js
+        continue_on_error: true,  // Don't fail if some sources are missing
+    };
+
+    let merged = merge_all_preferences(
+        &profile_path,
+        None,  // Auto-detect Firefox installation
+        &config
+    )?;
+
+    println!("Loaded {} preferences", merged.entries.len());
+    println!("Sources: {:?}", merged.loaded_sources);
+
+    if !merged.warnings.is_empty() {
+        println!("Warnings:");
+        for warning in &merged.warnings {
+            println!("  - {}", warning);
+        }
+    }
+
+    Ok(())
+}
+```
+
 ### Working with Preference Values
 
 ```rust
@@ -184,17 +268,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ffcv provides a clean, simplified API with all public types and functions available at the crate root:
 
 **Core Types:**
-- `PrefEntry` - A single preference entry with key, value, and type
+- `PrefEntry` - A single preference entry with key, value, type, and source
 - `PrefType` - The type of preference (User, Default, Locked, Sticky)
 - `PrefValue` - The value of a preference (Bool, Int, Float, String, Null)
 - `PrefValueExt` - Convenience trait for type-safe value access
+- `PrefSource` - Where a preference came from (BuiltIn, GlobalDefault, User, SystemPolicy)
+- `FirefoxInstallation` - Metadata about a Firefox installation
+- `MergedPreferences` - Combined preferences from multiple sources
 
 **Core Functions:**
 - `parse_prefs_js()` - Parse preference file contents
 - `parse_prefs_js_file()` - Parse directly from a file path
 - `query_preferences()` - Filter preferences by glob patterns
+- `merge_all_preferences()` - Merge preferences from all sources
 - `list_profiles()` - List all Firefox profiles
 - `find_profile_path()` - Find a specific profile by name
+- `find_firefox_installation()` - Auto-detect Firefox installation
 - `get_prefs_path()` - Get the prefs.js path for a profile
 
 All functions return `Result<T, Error>` for proper error handling.

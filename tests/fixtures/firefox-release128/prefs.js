@@ -1,0 +1,17 @@
+user_pref("app.shield.optoutstudies.enabled", false);
+user_pref("app.update.auto", false);
+user_pref("browser.cache.disk.capacity", 2097152);
+user_pref("browser.cache.disk.smart_size.enabled", false);
+user_pref("browser.download.dir", "/home/user/Downloads");
+user_pref("browser.download.folderList", 2);
+user_pref("browser.search.isUS", true);
+user_pref("browser.search.region", "US");
+user_pref("browser.startup.homepage", "https://example.com");
+user_pref("browser.startup.page", 3);
+user_pref("extensions.lastAppVersion", "128.0");
+user_pref("general.useragent.locale", "en-US");
+user_pref("network.cookie.cookieBehavior", 1);
+user_pref("network.proxy.type", 0);
+user_pref("privacy.trackingprotection.enabled", true);
+user_pref("privacy.sanitize.sanitizeOnShutdown", true);
+user_pref("toolkit.telemetry.enabled", false);

@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::path::PathBuf;
 
 /// Firefox preference value types
 ///
@@ -212,6 +213,44 @@ pub enum PrefType {
     Sticky,
 }
 
+/// Firefox preference source
+///
+/// Indicates where a preference value originates from in the Firefox
+/// configuration hierarchy. This helps users understand the provenance
+/// of their configuration settings.
+///
+/// Firefox loads preferences in a specific order, with later sources
+/// overriding earlier ones:
+///
+/// 1. Built-in defaults (omni.ja) - Lowest precedence
+/// 2. Global defaults (greprefs.js) - Medium precedence
+/// 3. User preferences (prefs.js) - Highest precedence
+/// 4. System policies (policies.json) - Overrides all (future)
+///
+/// # Example
+///
+/// ```rust
+/// use ffcv::PrefSource;
+///
+/// let source = PrefSource::BuiltIn;
+/// assert_eq!(source, PrefSource::BuiltIn);
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PrefSource {
+    /// Built-in default from omni.ja (e.g., defaults/pref/*.js)
+    #[serde(rename = "builtin")]
+    BuiltIn,
+    /// Global default from greprefs.js in Firefox installation directory
+    #[serde(rename = "global")]
+    GlobalDefault,
+    /// User preference from prefs.js in profile directory
+    #[serde(rename = "user")]
+    User,
+    /// System-wide policy from policies.json (future support)
+    #[serde(rename = "policy")]
+    SystemPolicy,
+}
+
 /// Internal type for parser that always includes pref type
 ///
 /// This structure is returned by `parse_prefs_js()` and contains
@@ -241,6 +280,12 @@ pub struct PrefEntry {
     /// Optional human-readable explanation for the preference
     #[serde(skip_serializing_if = "Option::is_none")]
     pub explanation: Option<&'static str>,
+    /// The source of this preference value
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<PrefSource>,
+    /// The origin file for this preference (e.g., "prefs.js", "omni.ja:defaults/pref/browser.js")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_file: Option<String>,
 }
 
 impl PrefEntry {
@@ -272,6 +317,85 @@ impl PrefEntry {
 
 impl fmt::Display for PrefEntry {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}({:?}) = {}", self.key, self.pref_type, self.value)
+        let source_info = if let Some(ref source) = self.source {
+            match source {
+                PrefSource::BuiltIn => " [builtin]",
+                PrefSource::GlobalDefault => " [global]",
+                PrefSource::User => " [user]",
+                PrefSource::SystemPolicy => " [policy]",
+            }
+        } else {
+            ""
+        };
+
+        write!(
+            f,
+            "{}({:?}){} = {}",
+            self.key, self.pref_type, source_info, self.value
+        )
     }
+}
+
+/// Firefox installation information
+///
+/// Represents a Firefox installation directory with metadata about
+/// available configuration files.
+///
+/// # Example
+///
+/// ```rust
+/// use ffcv::FirefoxInstallation;
+/// use std::path::PathBuf;
+///
+/// let install = FirefoxInstallation {
+///     version: "128.0".to_string(),
+///     path: PathBuf::from("/usr/lib/firefox"),
+///     has_greprefs: true,
+///     has_omni_ja: true,
+/// };
+/// ```
+#[derive(Debug, Clone)]
+pub struct FirefoxInstallation {
+    /// Firefox version string (e.g., "128.0", "115.5.0esr")
+    pub version: String,
+    /// Path to Firefox installation directory
+    pub path: PathBuf,
+    /// Whether greprefs.js exists in this installation
+    pub has_greprefs: bool,
+    /// Whether omni.ja exists in this installation
+    pub has_omni_ja: bool,
+}
+
+/// Merged preferences from multiple sources
+///
+/// Represents the result of merging preferences from built-in defaults,
+/// global defaults, and user preferences, along with metadata about
+/// which sources were successfully loaded.
+///
+/// # Example
+///
+/// ```rust
+/// use ffcv::{MergedPreferences, PrefEntry, PrefSource};
+/// use std::path::PathBuf;
+///
+/// let merged = MergedPreferences {
+///     entries: vec![],
+///     install_path: Some(PathBuf::from("/usr/lib/firefox")),
+///     profile_path: PathBuf::from("/home/user/.mozilla/firefox/default"),
+///     loaded_sources: vec![PrefSource::User],
+///     warnings: vec![],
+/// };
+/// ```
+#[derive(Debug, Clone, Serialize)]
+pub struct MergedPreferences {
+    /// All merged preference entries (with highest precedence value for each key)
+    pub entries: Vec<PrefEntry>,
+    /// Path to Firefox installation (if found)
+    pub install_path: Option<PathBuf>,
+    /// Path to Firefox profile directory
+    pub profile_path: PathBuf,
+    /// Which preference sources were successfully loaded
+    pub loaded_sources: Vec<PrefSource>,
+    /// Any warnings or issues encountered during merging
+    pub warnings: Vec<String>,
 }

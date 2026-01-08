@@ -47,6 +47,29 @@ pub enum Error {
     /// profiles.ini parsing error
     #[error("Failed to parse profiles.ini: {0}")]
     ProfilesIniParse(String),
+
+    /// Firefox installation not found
+    #[error("Firefox installation not found. Searched paths: {searched_paths}")]
+    FirefoxNotFound { searched_paths: String },
+
+    /// Error reading or parsing omni.ja file
+    #[error("omni.ja error: {0}")]
+    OmniJaError(String),
+
+    /// Preference file not found
+    #[error("Preference file not found: {file}")]
+    PrefFileNotFound { file: String },
+
+    /// File extraction failed
+    #[error("File extraction failed: {0}")]
+    ExtractionFailed(String),
+
+    /// omni.ja file is too large to process safely
+    #[error(
+        "omni.ja file is too large ({actual} bytes). Maximum safe size is {limit} bytes. \
+         You can increase this limit with --max-file-size if you're sure the file is valid."
+    )]
+    OmniJaTooLarge { actual: usize, limit: usize },
 }
 
 /// Result type alias for convenience

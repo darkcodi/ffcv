@@ -42,14 +42,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         cli::Commands::Profile { profiles_dir } => commands::list_profiles(profiles_dir.as_deref()),
+        cli::Commands::Install {
+            profiles_dir: _,
+            all,
+            verbose,
+        } => commands::list_installations(all, verbose),
         cli::Commands::Config {
             profile,
             profiles_dir,
+            install_dir,
             stdin,
             max_file_size,
             query,
             get,
             output_type,
+            show_only_modified,
             unexplained_only,
         } => {
             // Convert Vec<String> to Vec<&str> for query_preferences
@@ -58,10 +65,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 stdin,
                 profile_name: &profile,
                 profiles_dir_opt: profiles_dir.as_deref(),
+                install_dir_opt: install_dir.as_deref(),
                 max_file_size,
                 query_patterns: &query_refs,
                 get,
                 output_type,
+                show_only_modified,
                 unexplained_only,
             })
         }
