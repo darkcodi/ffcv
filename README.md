@@ -43,7 +43,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ffcv = "1.0.1"
+ffcv = "1.0.2"
 ```
 
 ## Command-Line Usage
