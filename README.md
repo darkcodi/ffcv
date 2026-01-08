@@ -52,36 +52,33 @@ ffcv = "1.0.1"
 
 ```bash
 # List all Firefox profiles on your system
-ffcv profile list
+ffcv profile
 
 # Specify a custom Firefox profiles directory
-ffcv profile list --profiles-dir /custom/path
+ffcv profile --profiles-dir /custom/path
 ```
 
 ### View Configuration
 
 ```bash
 # View all preferences for the default profile
-ffcv config view default
+ffcv config
+
+# View preferences for a specific profile
+ffcv config --profile myprofile
 
 # Query specific preferences by glob pattern
-ffcv config view default --query "network.*"
-ffcv config view default --query "browser.*" "extensions.*"
+ffcv config --query "network.*"
+ffcv config --query "browser.*" --query "extensions.*"
 
-# Get a single preference
-ffcv config get default "network.proxy.type"
+# Get a single preference (raw output)
+ffcv config --get "network.proxy.type"
 
 # Read from stdin
-cat prefs.js | ffcv config view -
+cat prefs.js | ffcv config --stdin
 
 # Output as JSON array
-ffcv config view default --output-format array
-
-# Include human-readable explanations
-ffcv config view default --include-explanations
-
-# Read from a specific file
-ffcv config view default --file /path/to/prefs.js
+ffcv config --output-type json-array
 ```
 
 ## Library Usage

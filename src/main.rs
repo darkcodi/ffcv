@@ -7,9 +7,8 @@
 //!
 //! # Subcommands
 //!
-//! - `ffcv profile list` - List all Firefox profiles on the system
-//! - `ffcv config view <profile>` - View configuration for a profile
-//! - `ffcv config get <profile> <key>` - Get a specific preference value
+//! - `ffcv profile` - List all Firefox profiles on the system
+//! - `ffcv config` - View configuration for a profile
 //!
 //! For programmatic usage, see the [library documentation](../ffcv/index.html).
 //!
@@ -17,16 +16,19 @@
 //!
 //! ```bash
 //! # List all Firefox profiles
-//! ffcv profile list
+//! ffcv profile
 //!
 //! # View all preferences for the default profile
-//! ffcv config view default
+//! ffcv config
+//!
+//! # View preferences for a specific profile
+//! ffcv config --profile myprofile
 //!
 //! # Query network-related preferences
-//! ffcv config view default --query "network.*"
+//! ffcv config --query "network.*"
 //!
 //! # Get a single preference
-//! ffcv config get default "network.proxy.type"
+//! ffcv config --get "network.proxy.type"
 //! ```
 
 mod cli;
