@@ -19,6 +19,8 @@ ffcv is both a command-line tool and a Rust library for working with Firefox's `
 - **Powerful Querying** - Filter preferences using glob patterns like `"network.*"` or `"browser.*.enabled"`
 - **Cross-Platform** - Automatic Firefox profile discovery on Linux, macOS, and Windows
 - **Rich Data Types** - Supports boolean, integer, float, string, and null values
+- **Type-Safe API** - Convenience trait for easy value type checking and extraction
+- **Simple Interface** - All public types and functions available at crate root
 - **Human-Readable Explanations** - Optional explanations for what preferences do
 - **Flexible Output** - JSON output with customizable formatting
 - **Well-Tested** - Comprehensive test coverage with robust error handling
@@ -41,7 +43,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ffcv = "1.0"
+ffcv = "1.0.1"
 ```
 
 ## Command-Line Usage
@@ -87,12 +89,12 @@ ffcv config view default --file /path/to/prefs.js
 ### Basic Parsing
 
 ```rust
-use ffcv::parser::parse_prefs;
+use ffcv::parse_prefs_js;
 use std::fs;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let content = fs::read_to_string("prefs.js")?;
-    let entries = parse_prefs(&content)?;
+    let entries = parse_prefs_js(&content)?;
 
     for entry in entries {
         println!("{:?} = {:?}", entry.key, entry.value);
@@ -105,19 +107,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Query Preferences
 
 ```rust
-use ffcv::parser::parse_prefs;
-use ffcv::query::QueryMatcher;
+use ffcv::{parse_prefs_js, query_preferences};
 use std::fs;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let content = fs::read_to_string("prefs.js")?;
-    let entries = parse_prefs(&content)?;
+    let entries = parse_prefs_js(&content)?;
 
-    // Create a matcher for network-related preferences
-    let matcher = QueryMatcher::new(vec!["network.*"])?;
+    // Query network-related preferences
+    let network_prefs = query_preferences(&entries, &["network.*"])?;
 
-    // Filter and display matching entries
-    for entry in entries.into_iter().filter(|e| matcher.matches(&e.key)) {
+    // Display matching entries
+    for entry in network_prefs {
         println!("{} = {:?}", entry.key, entry.value);
     }
 
@@ -128,11 +129,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Profile Discovery
 
 ```rust
-use ffcv::profile::ProfileFinder;
+use ffcv::list_profiles;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let finder = ProfileFinder::new()?;
-    let profiles = finder.find_profiles()?;
+    let profiles = list_profiles(None)?;
 
     for profile in profiles {
         println!("Profile: {}", profile.name);
@@ -147,18 +147,60 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Working with Preference Values
 
 ```rust
-use ffcv::types::{PrefEntry, PrefValue};
+use ffcv::{PrefEntry, PrefValue, PrefValueExt};
 
 fn process_entry(entry: PrefEntry) {
-    match entry.value {
-        PrefValue::Bool(true) => println!("{} is enabled", entry.key),
-        PrefValue::Bool(false) => println!("{} is disabled", entry.key),
-        PrefValue::Int(n) => println!("{} = {} (integer)", entry.key, n),
-        PrefValue::String(ref s) => println!("{} = \"{}\"", entry.key, s),
-        _ => println!("{} = {:?}", entry.key, entry.value),
+    // Use convenience methods from PrefValueExt trait
+    if let Some(enabled) = entry.value.as_bool() {
+        if enabled {
+            println!("{} is enabled", entry.key);
+        } else {
+            println!("{} is disabled", entry.key);
+        }
+    } else if let Some(n) = entry.value.as_int() {
+        println!("{} = {} (integer)", entry.key, n);
+    } else if let Some(s) = entry.value.as_string() {
+        println!("{} = \"{}\"", entry.key, s);
+    } else {
+        println!("{} = {:?}", entry.key, entry.value);
     }
 }
 ```
+
+### Finding a Specific Profile
+
+```rust
+use ffcv::find_profile_path;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Find a specific Firefox profile by name
+    let profile_path = find_profile_path("default", None)?;
+
+    println!("Profile path: {}", profile_path.display());
+
+    Ok(())
+}
+```
+
+## API Design
+
+ffcv provides a clean, simplified API with all public types and functions available at the crate root:
+
+**Core Types:**
+- `PrefEntry` - A single preference entry with key, value, and type
+- `PrefType` - The type of preference (User, Default, Locked, Sticky)
+- `PrefValue` - The value of a preference (Bool, Int, Float, String, Null)
+- `PrefValueExt` - Convenience trait for type-safe value access
+
+**Core Functions:**
+- `parse_prefs_js()` - Parse preference file contents
+- `parse_prefs_js_file()` - Parse directly from a file path
+- `query_preferences()` - Filter preferences by glob patterns
+- `list_profiles()` - List all Firefox profiles
+- `find_profile_path()` - Find a specific profile by name
+- `get_prefs_path()` - Get the prefs.js path for a profile
+
+All functions return `Result<T, Error>` for proper error handling.
 
 ## Preference Types
 
@@ -215,6 +257,10 @@ This project is dual-licensed under either:
 - Apache License, Version 2.0 ([LICENSE-APACHE-2.0.txt](LICENSE-APACHE-2.0.txt) or http://www.apache.org/licenses/LICENSE-2.0)
 
 You may choose either license for your use.
+
+## Version 1.0
+
+ffcv provides a stable and well-tested API. The library offers a clean, simplified interface with comprehensive Firefox preference parsing capabilities. All public types and functions are available at the crate root for easy importing.
 
 ## Acknowledgments
 
