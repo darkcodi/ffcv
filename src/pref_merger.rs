@@ -278,7 +278,15 @@ fn load_builtin_preferences(
                 all_prefs.extend(prefs);
             }
             Err(e) => {
-                warnings.push(format!("Failed to parse {}: {}", file_path.display(), e));
+                // Skip files that fail to parse (likely non-pref .js files)
+                // Don't warn about firefox.js as it may have non-standard content
+                let file_name = file_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown");
+                if file_name != "firefox.js" {
+                    warnings.push(format!("Failed to parse {}: {}", file_path.display(), e));
+                }
             }
         }
     }
@@ -291,24 +299,76 @@ fn load_global_preferences(
     install_path: &Path,
     warnings: &mut Vec<String>,
 ) -> Result<Vec<PrefEntry>> {
+    // First try to find greprefs.js directly in the filesystem
     let greprefs_paths = [
         install_path.join("greprefs.js"),
         install_path.join("browser/greprefs.js"),
     ];
 
-    let greprefs_path = greprefs_paths.iter().find(|p| p.exists()).ok_or_else(|| {
-        warnings.push("greprefs.js not found in Firefox installation".to_string());
-        Error::PrefFileNotFound {
-            file: "greprefs.js".to_string(),
-        }
-    })?;
+    let greprefs_path = if let Some(path) = greprefs_paths.iter().find(|p| p.exists()) {
+        path.clone()
+    } else {
+        // If not found, try to extract from omni.ja
+        let omni_paths = [
+            install_path.join("omni.ja"),
+            install_path.join("browser/omni.ja"),
+        ];
 
-    let mut prefs = parse_prefs_js_file(greprefs_path)?;
+        let omni_path = omni_paths.iter().find(|p| p.exists()).ok_or_else(|| {
+            warnings.push("greprefs.js not found and omni.ja not found".to_string());
+            Error::PrefFileNotFound {
+                file: "greprefs.js".to_string(),
+            }
+        })?;
+
+        // Extract greprefs.js from omni.ja
+        let config = ExtractConfig {
+            target_files: vec!["greprefs.js".to_string()],
+            ..Default::default()
+        };
+
+        let extractor = OmniExtractor::with_config(omni_path.clone(), config)?;
+
+        let extracted_files = match extractor.extract_prefs() {
+            Ok(files) => files,
+            Err(e) => {
+                warnings.push(format!("Failed to extract greprefs.js from omni.ja: {}", e));
+                return Err(Error::PrefFileNotFound {
+                    file: "greprefs.js".to_string(),
+                });
+            }
+        };
+
+        if extracted_files.is_empty() {
+            warnings.push("greprefs.js not found in omni.ja".to_string());
+            return Err(Error::PrefFileNotFound {
+                file: "greprefs.js".to_string(),
+            });
+        }
+
+        // Copy to a temp file that won't be deleted when extractor is dropped
+        let temp_dir = tempfile::tempdir()?;
+        let temp_path = temp_dir.path().join("greprefs.js");
+        std::fs::copy(&extracted_files[0], &temp_path)?;
+
+        // Keep temp_dir alive by leaking it (not ideal but works for now)
+        let _ = Box::leak(Box::new(temp_dir));
+
+        temp_path
+    };
+
+    let mut prefs = parse_prefs_js_file(&greprefs_path).unwrap_or_default();
 
     // Update source information
+    let source_file = if greprefs_path.to_string_lossy().contains("omni") {
+        "omni.ja:greprefs.js".to_string()
+    } else {
+        "greprefs.js".to_string()
+    };
+
     for pref in &mut prefs {
         pref.source = Some(PrefSource::GlobalDefault);
-        pref.source_file = Some("greprefs.js".to_string());
+        pref.source_file = Some(source_file.clone());
     }
 
     Ok(prefs)
