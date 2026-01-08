@@ -38,7 +38,7 @@ pub fn list_profiles(
 }
 
 /// List Firefox installations
-pub fn list_installations(all: bool, verbose: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub fn list_installations(all: bool) -> Result<(), Box<dyn std::error::Error>> {
     let installations = if all {
         find_all_firefox_installations()
             .map_err(|e| anyhow::anyhow!("Failed to find Firefox installations: {}", e))?
@@ -48,27 +48,16 @@ pub fn list_installations(all: bool, verbose: bool) -> Result<(), Box<dyn std::e
         {
             Some(install) => vec![install],
             None => {
-                eprintln!("No Firefox installation found");
+                // Return empty JSON array when no installation found
+                println!("[]");
                 return Ok(());
             }
         }
     };
 
-    if installations.is_empty() {
-        eprintln!("No Firefox installations found");
-        return Ok(());
-    }
-
-    // Format output based on verbosity
-    for install in installations {
-        if verbose {
-            println!("Firefox {} at {:?}", install.version, install.path);
-            println!("  omni.ja: {}", install.has_omni_ja);
-            println!("  greprefs.js: {}", install.has_greprefs);
-        } else {
-            println!("{:?} (Firefox {})", install.path, install.version);
-        }
-    }
+    // Always output JSON array (even if empty)
+    let json = serde_json::to_string_pretty(&installations)?;
+    println!("{}", json);
 
     Ok(())
 }

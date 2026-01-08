@@ -45,8 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         cli::Commands::Install {
             profiles_dir: _,
             all,
-            verbose,
-        } => commands::list_installations(all, verbose),
+        } => commands::list_installations(all),
         cli::Commands::Config {
             profile,
             profiles_dir,

@@ -354,7 +354,7 @@ impl fmt::Display for PrefEntry {
 ///     has_omni_ja: true,
 /// };
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct FirefoxInstallation {
     /// Firefox version string (e.g., "128.0", "115.5.0esr")
     pub version: String,

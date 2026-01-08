@@ -32,10 +32,6 @@ pub enum Commands {
         /// List all Firefox installations (default: first found)
         #[arg(long)]
         all: bool,
-
-        /// Verbose output
-        #[arg(long)]
-        verbose: bool,
     },
 
     /// View Firefox configuration for a profile
