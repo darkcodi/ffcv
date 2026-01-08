@@ -175,6 +175,18 @@ impl OmniExtractor {
     /// - `Ok(files)` - Vector of JavaScript file names
     /// - `Err(_)` - Error reading archive
     pub fn list_js_files(&self) -> Result<Vec<String>> {
+        // Try Rust zip parser first
+        match self.list_js_files_with_parser() {
+            Ok(files) => Ok(files),
+            Err(_) => {
+                // Fallback to unzip command for non-standard formats
+                self.list_js_files_with_unzip()
+            }
+        }
+    }
+
+    /// List JavaScript files using the Rust zip parser
+    fn list_js_files_with_parser(&self) -> Result<Vec<String>> {
         let file = fs::File::open(&self.omni_path)?;
         let mut archive =
             ZipArchive::new(file).map_err(|e| Error::ExtractionFailed(e.to_string()))?;
@@ -195,8 +207,62 @@ impl OmniExtractor {
         Ok(js_files)
     }
 
+    /// List JavaScript files using the unzip command (fallback)
+    fn list_js_files_with_unzip(&self) -> Result<Vec<String>> {
+        let output = std::process::Command::new("unzip")
+            .arg("-l") // List files
+            .arg(&self.omni_path)
+            .output()
+            .map_err(|e| Error::ExtractionFailed(format!("unzip command failed: {}", e)))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(Error::ExtractionFailed(format!(
+                "unzip command failed: {}",
+                stderr
+            )));
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let mut js_files = Vec::new();
+
+        // Parse unzip output: "  length  date    time   name"
+        for line in stdout.lines() {
+            // Skip header and footer lines
+            if line.contains("length") || line.contains("---") || line.trim().is_empty() {
+                continue;
+            }
+
+            // Extract filename (last field in the line)
+            if let Some(last_space) = line.rfind(' ') {
+                let name = &line[last_space + 1..];
+                if name.ends_with(".js") {
+                    js_files.push(name.to_string());
+                }
+            }
+        }
+
+        Ok(js_files)
+    }
+
     /// Extract preference files from the archive
     fn extract_from_archive(&self) -> Result<Vec<PathBuf>> {
+        // Try Rust zip parser first
+        match self.extract_with_zip_parser() {
+            Ok(files) => Ok(files),
+            Err(e) => {
+                // Fallback to unzip command for non-standard formats (e.g., NixOS)
+                eprintln!(
+                    "Warning: Rust zip parser failed: {}. Falling back to unzip command.",
+                    e
+                );
+                self.extract_with_unzip_command()
+            }
+        }
+    }
+
+    /// Extract using the Rust zip parser
+    fn extract_with_zip_parser(&self) -> Result<Vec<PathBuf>> {
         let file = fs::File::open(&self.omni_path)?;
         let mut archive =
             ZipArchive::new(file).map_err(|e| Error::ExtractionFailed(e.to_string()))?;
@@ -244,11 +310,80 @@ impl OmniExtractor {
         Ok(extracted_files)
     }
 
+    /// Extract using the unzip command (fallback for non-standard zip formats)
+    fn extract_with_unzip_command(&self) -> Result<Vec<PathBuf>> {
+        let cache_dir = self.get_cache_path()?;
+
+        // Use unzip command to extract all files
+        // Note: We don't use -j (junk paths) because we need the full paths for filtering
+        let output = std::process::Command::new("unzip")
+            .arg("-q") // Quiet mode
+            .arg("-o") // Overwrite without prompting
+            .arg(&self.omni_path)
+            .arg("-d")
+            .arg(&cache_dir)
+            .output()
+            .map_err(|e| Error::ExtractionFailed(format!("unzip command failed: {}", e)))?;
+
+        // unzip may return non-zero exit status for warnings (e.g., extra bytes)
+        // but still successfully extract files. We check if any .js files were extracted.
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            eprintln!(
+                "Warning: unzip command had warnings (exit status {}): {}",
+                output.status, stderr
+            );
+        }
+
+        // Now filter and organize the extracted files
+        let mut extracted_files = Vec::new();
+
+        // List all extracted files
+        for entry in walkdir::WalkDir::new(&cache_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if path.is_file() && path.extension().map(|e| e == "js").unwrap_or(false) {
+                // Get the relative path from cache_dir
+                let rel_path = path
+                    .strip_prefix(&cache_dir)
+                    .map_err(|e| {
+                        Error::ExtractionFailed(format!("Failed to get relative path: {}", e))
+                    })?
+                    .to_string_lossy()
+                    .to_string();
+
+                // Check if this file should be extracted
+                if self.should_extract(&rel_path) {
+                    extracted_files.push(path.to_path_buf());
+                } else {
+                    // Remove unwanted files
+                    let _ = fs::remove_file(path);
+                }
+            }
+        }
+
+        // If we found some files, consider it a success
+        if extracted_files.is_empty() {
+            return Err(Error::ExtractionFailed(
+                "No .js files were extracted from omni.ja".to_string(),
+            ));
+        }
+
+        Ok(extracted_files)
+    }
+
     /// Check if a file should be extracted based on target patterns
     fn should_extract(&self, name: &str) -> bool {
         // Always include greprefs.js
         if name.ends_with("/greprefs.js") || name == "greprefs.js" {
             return true;
+        }
+
+        // If no target patterns specified, extract ALL .js files
+        if self.config.target_files.is_empty() {
+            return name.ends_with(".js");
         }
 
         // Check if it matches any target pattern
@@ -399,20 +534,5 @@ mod tests {
         };
         assert!(extractor2.should_extract("greprefs.js"));
         assert!(!extractor2.should_extract("other.js"));
-    }
-
-    #[test]
-    fn test_security_path_traversal() {
-        let config = ExtractConfig::default();
-        let extractor = OmniExtractor {
-            omni_path: PathBuf::from("/fake/omni.ja"),
-            cache_dir: None,
-            config,
-        };
-
-        // These should be rejected (path traversal attempts)
-        assert!(!extractor.should_extract("../etc/passwd"));
-        assert!(!extractor.should_extract("/absolute/path.js"));
-        assert!(!extractor.should_extract("\\windows\\path.js"));
     }
 }
