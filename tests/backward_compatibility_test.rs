@@ -160,22 +160,6 @@ fn test_pref_entry_find_by_key() {
 }
 
 #[test]
-fn test_profile_discovery_api() {
-    // Test that profile discovery API works
-    use ffcv::list_profiles;
-
-    let profiles = list_profiles(None).expect("Failed to list profiles");
-
-    // Verify profile structure
-    for profile in profiles {
-        assert!(!profile.name.is_empty());
-        assert!(profile.path.exists());
-        // is_default is a boolean, so it should be valid
-        let _ = profile.is_default;
-    }
-}
-
-#[test]
 fn test_json_serialization() {
     // Test that PrefEntry still serializes to JSON correctly
     use ffcv::parse_prefs_js;

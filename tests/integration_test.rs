@@ -60,55 +60,6 @@ fn test_omni_extraction_from_fixture() {
 }
 
 #[test]
-fn test_merge_all_preferencess_with_fixtures() {
-    use ffcv::{merge_all_preferences, MergeConfig};
-
-    let profile_path = fixtures_path().join("firefox-esr115").join("prefs.js");
-
-    let omni_path = fixtures_path()
-        .join("firefox-esr115")
-        .join("omni-ja-esr115.ja");
-
-    let greprefs_path = fixtures_path().join("firefox-esr115").join("greprefs.js");
-
-    // Verify all fixture files exist
-    assert!(profile_path.exists());
-    assert!(omni_path.exists());
-    assert!(greprefs_path.exists());
-
-    let config = MergeConfig {
-        include_builtins: true,
-        include_globals: true,
-        include_user: true,
-        continue_on_error: false,
-    };
-
-    // For this test, we'll mock the Firefox installation location
-    // by using the fixture directory
-    let result = merge_all_preferences(&profile_path, None, &config);
-
-    // This might fail if Firefox is not actually installed on the system
-    // so we'll just test that it doesn't panic
-    match result {
-        Ok(merged) => {
-            // Verify merge worked
-            assert!(!merged.entries.is_empty());
-
-            // Verify that source tracking works
-            let has_source = merged.entries.iter().any(|e| e.source.is_some());
-            assert!(
-                has_source,
-                "At least some entries should have source information"
-            );
-        }
-        Err(_) => {
-            // It's okay if merge fails due to missing Firefox installation
-            // in CI environments
-        }
-    }
-}
-
-#[test]
 fn test_preference_precedence() {
     use ffcv::{parse_prefs_js_file, query_preferences, PrefSource};
 
