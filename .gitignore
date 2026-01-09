@@ -1,6 +1,7 @@
 /target
-.idea/
 .claude/
+CLAUDE.md
+AGENTS.md
+openspec/
+.idea/
 *.json
-TODO.txt
-PLAN.txt
