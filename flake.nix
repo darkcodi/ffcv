@@ -14,7 +14,7 @@
       {
         packages.ffcv = pkgs.rustPlatform.buildRustPackage {
           pname = "ffcv";
-          version = "1.0.2";
+          version = "1.1.0";
           src = ./.;
           cargoLock.lockFile = ./Cargo.lock;
           buildType = "release";
