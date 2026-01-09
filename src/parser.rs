@@ -132,22 +132,63 @@ impl<'a> Parser<'a> {
                 }
                 Some(Token::Eof) => break,
                 Some(_) => {
-                    let (key, value, pref_type, locked) = self.parse_statement_with_type()?;
-                    let explanation = crate::explanations::get_preference_explanation_static(&key);
-                    preferences.push(PrefEntry {
-                        key,
-                        value,
-                        pref_type,
-                        explanation,
-                        source: Some(PrefSource::User),
-                        source_file: Some("prefs.js".to_string()),
-                        locked,
-                    });
+                    // Try to parse a statement, but recover from errors
+                    match self.parse_statement_with_type() {
+                        Ok((key, value, pref_type, locked)) => {
+                            let explanation =
+                                crate::explanations::get_preference_explanation_static(&key);
+                            preferences.push(PrefEntry {
+                                key,
+                                value,
+                                pref_type,
+                                explanation,
+                                source: Some(PrefSource::User),
+                                source_file: Some("prefs.js".to_string()),
+                                locked,
+                            });
+                        }
+                        Err(_e) => {
+                            // Error recovery: skip to next statement
+                            // Silently ignore malformed statements as per user preference
+                            self.skip_to_next_statement();
+                        }
+                    }
                 }
             }
         }
 
         Ok(preferences)
+    }
+
+    /// Skip tokens until we find a valid statement start or EOF
+    /// Looks for identifiers that could be pref types (user_pref, pref, lock_pref, sticky_pref)
+    fn skip_to_next_statement(&mut self) {
+        loop {
+            match &self.current {
+                None => {
+                    // Lexer error - can't continue
+                    return;
+                }
+                Some(Token::Eof) => return,
+                Some(Token::Identifier(ident)) => {
+                    // Check if this looks like a pref statement
+                    if matches!(
+                        ident.as_str(),
+                        "user_pref" | "pref" | "lock_pref" | "sticky_pref"
+                    ) {
+                        // Found next statement - stop skipping
+                        return;
+                    } else {
+                        // Not a pref type, skip it
+                        self.advance();
+                    }
+                }
+                Some(_) => {
+                    // Skip any other token
+                    self.advance();
+                }
+            }
+        }
     }
 
     /// Parse a single statement with type information: pref_type "(" key "," value ["," locked_flag] ")" ";"
@@ -700,7 +741,9 @@ mod tests {
     fn test_malformed_missing_semicolon() {
         let input = r#"user_pref("test", "value")"#;
         let result = parse_prefs_js(input);
-        assert!(result.is_err());
+        // With error recovery, parsing succeeds but malformed statement is skipped
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
     }
 
     #[test]
@@ -721,12 +764,9 @@ mod tests {
     fn test_malformed_unknown_pref_function() {
         let input = r#"unknown_func("test", "value");"#;
         let result = parse_prefs_js(input);
-        // Now that we parse types, we reject unknown pref functions
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unknown pref function"));
+        // With error recovery, parsing succeeds but unknown function is skipped
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
     }
 
     #[test]
@@ -970,9 +1010,9 @@ mod tests {
     fn test_parse_unknown_pref_function_error() {
         let input = r#"unknown_pref("test", "value");"#;
         let result = parse_prefs_js(input);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("Unknown pref function"));
+        // With error recovery, parsing succeeds but unknown function is skipped
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
     }
 
     #[test]
@@ -1054,9 +1094,9 @@ mod tests {
     fn test_parse_invalid_locked_flag() {
         let input = r#"pref("test.pref", 42, invalid_flag);"#;
         let result = parse_prefs_js(input);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("Invalid locked flag"));
+        // With error recovery, parsing succeeds but invalid locked flag is skipped
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
     }
 
     #[test]

@@ -248,7 +248,8 @@ fn test_error_type_still_works() {
     // Test that Error enum still works with existing variants
     use ffcv::{parse_prefs_js, Error};
 
-    let invalid = r#"user_pref(invalid syntax"#;
+    // Test with lexer error (unclosed string) which still fails
+    let invalid = r#"user_pref("unclosed string)"#;
 
     match parse_prefs_js(invalid) {
         Err(Error::Parser {
@@ -260,7 +261,7 @@ fn test_error_type_still_works() {
             assert!(column > 0);
             assert!(!message.is_empty());
         }
-        _ => panic!("Expected parser error"),
+        _ => panic!("Expected parser error for unclosed string"),
     }
 }
 
