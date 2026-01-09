@@ -250,12 +250,8 @@ impl OmniExtractor {
         // Try Rust zip parser first
         match self.extract_with_zip_parser() {
             Ok(files) => Ok(files),
-            Err(e) => {
+            Err(_e) => {
                 // Fallback to unzip command for non-standard formats (e.g., NixOS)
-                eprintln!(
-                    "Warning: Rust zip parser failed: {}. Falling back to unzip command.",
-                    e
-                );
                 self.extract_with_unzip_command()
             }
         }
@@ -327,13 +323,8 @@ impl OmniExtractor {
 
         // unzip may return non-zero exit status for warnings (e.g., extra bytes)
         // but still successfully extract files. We check if any .js files were extracted.
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            eprintln!(
-                "Warning: unzip command had warnings (exit status {}): {}",
-                output.status, stderr
-            );
-        }
+        // Note: We ignore unzip warnings as they don't affect extraction success
+        let _status = output.status;
 
         // Now filter and organize the extracted files
         let mut extracted_files = Vec::new();

@@ -99,7 +99,6 @@ pub fn merge_all_preferences(
     } else if config.include_builtins || config.include_globals {
         match firefox_locator::find_firefox_installation() {
             Ok(Some(install)) => {
-                eprintln!("Found Firefox {} at {:?}", install.version, install.path);
                 loaded_sources.push(PrefSource::BuiltIn);
                 Some(install.path)
             }
@@ -121,10 +120,6 @@ pub fn merge_all_preferences(
         if let Some(ref install) = resolved_install_path {
             match load_builtin_preferences(install, &mut warnings) {
                 Ok(builtins) => {
-                    eprintln!(
-                        "Loaded {} built-in preferences from omni.ja",
-                        builtins.len()
-                    );
                     for pref in builtins {
                         pref_map.insert(pref.key.clone(), pref);
                     }
@@ -146,10 +141,6 @@ pub fn merge_all_preferences(
         if let Some(ref install) = resolved_install_path {
             match load_global_preferences(install, &mut warnings) {
                 Ok(globals) => {
-                    eprintln!(
-                        "Loaded {} global preferences from greprefs.js",
-                        globals.len()
-                    );
                     for pref in globals {
                         pref_map.insert(pref.key.clone(), pref);
                     }
@@ -174,7 +165,6 @@ pub fn merge_all_preferences(
 
         match load_user_preferences(&prefs_js_path, &mut warnings) {
             Ok(user_prefs) => {
-                eprintln!("Loaded {} user preferences from prefs.js", user_prefs.len());
                 for pref in user_prefs {
                     pref_map.insert(pref.key.clone(), pref);
                 }
