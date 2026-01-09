@@ -97,8 +97,11 @@ ffcv config --query "browser.*" --query "extensions.*"
 # Get a single preference (raw output)
 ffcv config --get "network.proxy.type"
 
-# View only user-modified preferences (exclude built-ins and globals)
-ffcv config --show-only-modified
+# View all preferences including built-in defaults
+ffcv config --all
+
+# View only user-modified preferences (default behavior)
+ffcv config
 
 # Specify custom Firefox installation directory
 ffcv config --install-dir /usr/lib/firefox

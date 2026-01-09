@@ -73,8 +73,12 @@ pub enum Commands {
         output_type: OutputType,
 
         /// Show only user-modified preferences (exclude built-in defaults)
-        #[arg(long = "show-only-modified")]
+        #[arg(long = "show-only-modified", conflicts_with = "all")]
         show_only_modified: bool,
+
+        /// Show all preferences including built-in defaults
+        #[arg(long)]
+        all: bool,
 
         /// Show only preferences without explanations (hidden flag)
         #[arg(long = "unexplained-only", hide = true)]

@@ -56,6 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             get,
             output_type,
             show_only_modified,
+            all,
             unexplained_only,
         } => {
             // Convert Vec<String> to Vec<&str> for query_preferences
@@ -70,6 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 get,
                 output_type,
                 show_only_modified,
+                all,
                 unexplained_only,
             })
         }

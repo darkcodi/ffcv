@@ -18,6 +18,7 @@ pub struct ViewConfigParams<'a> {
     pub get: Option<String>,
     pub output_type: cli::OutputType,
     pub show_only_modified: bool,
+    pub all: bool,
     pub unexplained_only: bool,
 }
 
@@ -117,8 +118,8 @@ pub fn view_config(params: ViewConfigParams) -> Result<(), Box<dyn std::error::E
 
     // Configure merge
     let merge_config = MergeConfig {
-        include_builtins: !params.show_only_modified,
-        include_globals: !params.show_only_modified,
+        include_builtins: params.all,
+        include_globals: params.all,
         include_user: true,
         continue_on_error: true,
     };
