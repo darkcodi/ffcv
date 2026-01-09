@@ -46,6 +46,7 @@ use glob::Pattern;
 ///         explanation: None,
 ///         source: Some(PrefSource::User),
 ///         source_file: Some("prefs.js".to_string()),
+///         locked: None,
 ///     },
 ///     PrefEntry {
 ///         key: "browser.startup.homepage".to_string(),
@@ -54,6 +55,7 @@ use glob::Pattern;
 ///         explanation: None,
 ///         source: Some(PrefSource::User),
 ///         source_file: Some("prefs.js".to_string()),
+///         locked: None,
 ///     },
 /// ];
 ///
@@ -101,6 +103,7 @@ mod tests {
                 explanation: None,
                 source: Some(PrefSource::User),
                 source_file: Some("prefs.js".to_string()),
+                locked: None,
             },
             PrefEntry {
                 key: "network.cookie.cookieBehavior".to_string(),
@@ -109,6 +112,7 @@ mod tests {
                 explanation: None,
                 source: Some(PrefSource::User),
                 source_file: Some("prefs.js".to_string()),
+                locked: None,
             },
             PrefEntry {
                 key: "browser.startup.homepage".to_string(),
@@ -117,6 +121,7 @@ mod tests {
                 explanation: None,
                 source: Some(PrefSource::User),
                 source_file: Some("prefs.js".to_string()),
+                locked: None,
             },
             PrefEntry {
                 key: "browser.search.region".to_string(),
@@ -125,6 +130,7 @@ mod tests {
                 explanation: None,
                 source: Some(PrefSource::User),
                 source_file: Some("prefs.js".to_string()),
+                locked: None,
             },
             PrefEntry {
                 key: "javascript.enabled".to_string(),
@@ -133,6 +139,7 @@ mod tests {
                 explanation: None,
                 source: Some(PrefSource::User),
                 source_file: Some("prefs.js".to_string()),
+                locked: None,
             },
         ]
     }

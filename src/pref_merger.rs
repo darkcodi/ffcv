@@ -404,6 +404,7 @@ mod tests {
             explanation: None,
             source: Some(PrefSource::User),
             source_file: Some("prefs.js".to_string()),
+            locked: None,
         }];
 
         assert!(get_effective_pref(&prefs, "test.pref").is_some());

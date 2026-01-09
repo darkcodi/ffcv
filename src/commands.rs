@@ -252,6 +252,7 @@ mod tests {
             explanation: None,
             source: Some(ffcv::PrefSource::User),
             source_file: Some("prefs.js".to_string()),
+            locked: None,
         };
 
         let json_str = serde_json::to_string(&entry).unwrap();
@@ -411,6 +412,7 @@ mod tests {
             explanation: Some("Master switch to enable or disable JavaScript execution."),
             source: Some(ffcv::PrefSource::User),
             source_file: Some("prefs.js".to_string()),
+            locked: None,
         };
 
         let json_str = serde_json::to_string(&entry).unwrap();
@@ -428,6 +430,7 @@ mod tests {
             explanation: None,
             source: Some(ffcv::PrefSource::User),
             source_file: Some("prefs.js".to_string()),
+            locked: None,
         };
 
         let json_str = serde_json::to_string(&entry).unwrap();

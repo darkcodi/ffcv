@@ -132,7 +132,7 @@ impl<'a> Parser<'a> {
                 }
                 Some(Token::Eof) => break,
                 Some(_) => {
-                    let (key, value, pref_type) = self.parse_statement_with_type()?;
+                    let (key, value, pref_type, locked) = self.parse_statement_with_type()?;
                     let explanation = crate::explanations::get_preference_explanation_static(&key);
                     preferences.push(PrefEntry {
                         key,
@@ -141,6 +141,7 @@ impl<'a> Parser<'a> {
                         explanation,
                         source: Some(PrefSource::User),
                         source_file: Some("prefs.js".to_string()),
+                        locked,
                     });
                 }
             }
@@ -149,8 +150,8 @@ impl<'a> Parser<'a> {
         Ok(preferences)
     }
 
-    /// Parse a single statement with type information: pref_type "(" key "," value ")" ";"
-    fn parse_statement_with_type(&mut self) -> Result<(String, PrefValue, PrefType)> {
+    /// Parse a single statement with type information: pref_type "(" key "," value ["," locked_flag] ")" ";"
+    fn parse_statement_with_type(&mut self) -> Result<(String, PrefValue, PrefType, Option<bool>)> {
         // Parse and capture the pref function name (user_pref, pref, lock_pref, sticky_pref)
         let pref_type = self.parse_pref_type_identifier()?;
 
@@ -166,13 +167,16 @@ impl<'a> Parser<'a> {
         // Parse value
         let value = self.parse_value()?;
 
+        // Parse optional third argument (locked flag)
+        let locked = self.parse_optional_locked_flag()?;
+
         // Expect right parenthesis
         self.expect_token(Token::RightParen)?;
 
         // Expect semicolon
         self.expect_token(Token::Semicolon)?;
 
-        Ok((key, value, pref_type))
+        Ok((key, value, pref_type, locked))
     }
 
     /// Parse the pref type identifier and return the corresponding PrefType
@@ -207,6 +211,64 @@ impl<'a> Parser<'a> {
                     self.current
                 ),
             }),
+        }
+    }
+
+    /// Parse optional third argument (locked flag): ["," (Boolean | Identifier)]
+    ///
+    /// Returns Ok(None) if no third argument present
+    /// Returns Ok(Some(flag_value)) if third argument present
+    /// Returns Err for invalid flag values
+    ///
+    /// Note: "sticky" identifier is treated as locked=true for simplicity
+    fn parse_optional_locked_flag(&mut self) -> Result<Option<bool>> {
+        match &self.current {
+            Some(Token::Comma) => {
+                // Consume the comma
+                self.advance();
+
+                // Parse the flag value
+                match &self.current {
+                    Some(Token::Boolean(b)) => {
+                        let flag = *b;
+                        self.advance();
+                        Ok(Some(flag))
+                    }
+                    Some(Token::Identifier(ident)) => {
+                        if ident == "sticky" {
+                            self.advance();
+                            // Treat sticky as locked=true (simpler approach)
+                            Ok(Some(true))
+                        } else {
+                            Err(Error::Parser {
+                                line: self.current_line,
+                                column: self.current_column,
+                                message: format!(
+                                    "Invalid locked flag '{}'. Expected true, false, or sticky",
+                                    ident
+                                ),
+                            })
+                        }
+                    }
+                    Some(token) => Err(Error::Parser {
+                        line: self.current_line,
+                        column: self.current_column,
+                        message: format!(
+                            "Invalid locked flag. Expected true, false, or sticky, got {:?}",
+                            token
+                        ),
+                    }),
+                    None => Err(Error::Parser {
+                        line: self.current_line,
+                        column: self.current_column,
+                        message: "Unexpected end of input while parsing locked flag".to_string(),
+                    }),
+                }
+            }
+            _ => {
+                // No third argument, return None
+                Ok(None)
+            }
         }
     }
 
@@ -939,5 +1001,108 @@ mod tests {
             .unwrap();
         assert_eq!(unknown_entry.key, "unknown.preference");
         assert!(unknown_entry.explanation.is_none());
+    }
+
+    #[test]
+    fn test_parse_three_arg_locked_true() {
+        let input = r#"pref("test.pref", 42, true);"#;
+        let result = parse_prefs_js(input).unwrap();
+        assert_eq!(result.len(), 1);
+        let entry = result.iter().find(|e| e.key == "test.pref").unwrap();
+        assert_eq!(entry.value, crate::types::PrefValue::Integer(42));
+        assert_eq!(entry.pref_type, crate::types::PrefType::Default);
+        assert_eq!(entry.locked, Some(true));
+    }
+
+    #[test]
+    fn test_parse_three_arg_locked_false() {
+        let input = r#"pref("test.pref", "value", false);"#;
+        let result = parse_prefs_js(input).unwrap();
+        assert_eq!(result.len(), 1);
+        let entry = result.iter().find(|e| e.key == "test.pref").unwrap();
+        assert_eq!(
+            entry.value,
+            crate::types::PrefValue::String("value".to_string())
+        );
+        assert_eq!(entry.pref_type, crate::types::PrefType::Default);
+        assert_eq!(entry.locked, Some(false));
+    }
+
+    #[test]
+    fn test_parse_three_arg_sticky() {
+        let input = r#"pref("test.pref", true, sticky);"#;
+        let result = parse_prefs_js(input).unwrap();
+        assert_eq!(result.len(), 1);
+        let entry = result.iter().find(|e| e.key == "test.pref").unwrap();
+        assert_eq!(entry.value, crate::types::PrefValue::Bool(true));
+        assert_eq!(entry.pref_type, crate::types::PrefType::Default);
+        assert_eq!(entry.locked, Some(true)); // sticky is treated as locked=true
+    }
+
+    #[test]
+    fn test_parse_two_arg_still_works() {
+        let input = r#"pref("test.pref", 42);"#;
+        let result = parse_prefs_js(input).unwrap();
+        assert_eq!(result.len(), 1);
+        let entry = result.iter().find(|e| e.key == "test.pref").unwrap();
+        assert_eq!(entry.value, crate::types::PrefValue::Integer(42));
+        assert_eq!(entry.pref_type, crate::types::PrefType::Default);
+        assert_eq!(entry.locked, None); // No locked flag
+    }
+
+    #[test]
+    fn test_parse_invalid_locked_flag() {
+        let input = r#"pref("test.pref", 42, invalid_flag);"#;
+        let result = parse_prefs_js(input);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Invalid locked flag"));
+    }
+
+    #[test]
+    fn test_parse_user_pref_with_locked_flag() {
+        let input = r#"user_pref("test.pref", "value", true);"#;
+        let result = parse_prefs_js(input).unwrap();
+        assert_eq!(result.len(), 1);
+        let entry = result.iter().find(|e| e.key == "test.pref").unwrap();
+        assert_eq!(entry.pref_type, crate::types::PrefType::User);
+        assert_eq!(entry.locked, Some(true));
+    }
+
+    #[test]
+    fn test_parse_mixed_two_and_three_arg() {
+        let input = r#"
+            pref("two.arg", 1);
+            pref("three.arg", 2, true);
+            user_pref("user.pref", "test", false);
+            lock_pref("locked.pref", true, sticky);
+        "#;
+        let result = parse_prefs_js(input).unwrap();
+        assert_eq!(result.len(), 4);
+
+        let two_arg = result.iter().find(|e| e.key == "two.arg").unwrap();
+        assert_eq!(two_arg.locked, None);
+
+        let three_arg = result.iter().find(|e| e.key == "three.arg").unwrap();
+        assert_eq!(three_arg.locked, Some(true));
+
+        let user_pref = result.iter().find(|e| e.key == "user.pref").unwrap();
+        assert_eq!(user_pref.locked, Some(false));
+
+        let locked_pref = result.iter().find(|e| e.key == "locked.pref").unwrap();
+        assert_eq!(locked_pref.locked, Some(true)); // sticky treated as true
+    }
+
+    #[test]
+    fn test_parse_three_arg_multiline() {
+        let input = r#"pref(
+            "test.pref",
+            42,
+            true
+        );"#;
+        let result = parse_prefs_js(input).unwrap();
+        assert_eq!(result.len(), 1);
+        let entry = result.iter().find(|e| e.key == "test.pref").unwrap();
+        assert_eq!(entry.locked, Some(true));
     }
 }

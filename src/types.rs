@@ -286,6 +286,9 @@ pub struct PrefEntry {
     /// The origin file for this preference (e.g., "prefs.js", "omni.ja:defaults/pref/browser.js")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_file: Option<String>,
+    /// Locked flag from three-argument syntax (Some(true)=locked, Some(false)=unlocked, None=not specified)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locked: Option<bool>,
 }
 
 impl PrefEntry {
