@@ -1,6 +1,6 @@
 [package]
 name = "ffcv"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 authors = ["darkcodi <trooper982@gmail.com>"]
 description = "Firefox Configuration Viewer - Parse and query Firefox preference files"
